@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:block/cube_all",
+  "textures": {
+    "all": "karma-gate-mod:block/gate_light"
+  }
+}

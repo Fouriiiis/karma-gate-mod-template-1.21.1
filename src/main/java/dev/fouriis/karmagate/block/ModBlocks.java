@@ -2,6 +2,7 @@ package dev.fouriis.karmagate.block;
 
 import dev.fouriis.karmagate.KarmaGateMod;
 import dev.fouriis.karmagate.block.karmagate.KarmaGateBlock;
+import dev.fouriis.karmagate.block.karmagate.GateLightBlock;
 import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
 import net.minecraft.block.Block;
 import net.minecraft.item.BlockItem;
@@ -14,11 +15,18 @@ import net.minecraft.util.Identifier;
 
 public class ModBlocks {
     
+
     public static final Block KARMA_GATE = registerBlock("karma_gate",
-            new KarmaGateBlock(Block.Settings.create()
-                    .strength(4.0f)
-                    .sounds(BlockSoundGroup.STONE)
-                    .nonOpaque()));
+        new KarmaGateBlock(Block.Settings.create()
+            .strength(4.0f)
+            .sounds(BlockSoundGroup.STONE)
+            .nonOpaque()));
+
+    public static final Block GATE_LIGHT = registerBlock("gate_light",
+        new GateLightBlock(Block.Settings.create()
+            .strength(1.0f)
+            .sounds(BlockSoundGroup.GLASS)
+            .nonOpaque()));
 
     private static Block registerBlock(String name, Block block) {
         registerBlockItem(name, block);
@@ -35,6 +43,7 @@ public class ModBlocks {
 
         ItemGroupEvents.modifyEntriesEvent(ItemGroups.BUILDING_BLOCKS).register(entries -> {
             entries.add(KARMA_GATE);
+            entries.add(GATE_LIGHT);
         });
     }
 }

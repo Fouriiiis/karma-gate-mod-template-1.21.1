@@ -1,6 +1,7 @@
 package dev.fouriis.karmagate;
 
 import dev.fouriis.karmagate.entity.ModBlockEntities;
+import dev.fouriis.karmagate.entity.client.GateLightBlockRenderer;
 import dev.fouriis.karmagate.entity.client.KarmaGateBlockRenderer;
 import net.fabricmc.api.ClientModInitializer;
 import net.minecraft.client.render.block.entity.BlockEntityRendererFactories;
@@ -12,5 +13,6 @@ public class KarmaGateModClient implements ClientModInitializer {
 		
 		// Register block entity renderer
 		BlockEntityRendererFactories.register(ModBlockEntities.KARMA_GATE_BLOCK_ENTITY, KarmaGateBlockRenderer::new);
+		BlockEntityRendererFactories.register(ModBlockEntities.GATE_LIGHT_BLOCK_ENTITY, GateLightBlockRenderer::new);
 	}
 }

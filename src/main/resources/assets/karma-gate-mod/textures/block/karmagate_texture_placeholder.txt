@@ -1,4 +1,0 @@
-// This is a placeholder texture file
-// In a real project, you would need to create an actual PNG texture file
-// For now, you can use any 64x64 texture or create one using an image editor
-// Place the texture at: src/main/resources/assets/karma-gate-mod/textures/block/karmagate.png
