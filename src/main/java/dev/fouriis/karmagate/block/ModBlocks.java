@@ -3,6 +3,7 @@ package dev.fouriis.karmagate.block;
 import dev.fouriis.karmagate.KarmaGateMod;
 import dev.fouriis.karmagate.block.karmagate.KarmaGateBlock;
 import dev.fouriis.karmagate.block.karmagate.GateLightBlock;
+import dev.fouriis.karmagate.block.karmagate.HeatCoilBlock;
 import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
 import net.minecraft.block.Block;
 import net.minecraft.item.BlockItem;
@@ -27,6 +28,12 @@ public class ModBlocks {
             .strength(1.0f)
             .sounds(BlockSoundGroup.GLASS)
             .nonOpaque()));
+    
+    public static final Block HEAT_COIL = registerBlock("heat_coil",
+        new HeatCoilBlock(Block.Settings.create()
+            .strength(3.0f)
+            .sounds(BlockSoundGroup.METAL)
+            .nonOpaque()));
 
     private static Block registerBlock(String name, Block block) {
         registerBlockItem(name, block);
@@ -44,6 +51,7 @@ public class ModBlocks {
         ItemGroupEvents.modifyEntriesEvent(ItemGroups.BUILDING_BLOCKS).register(entries -> {
             entries.add(KARMA_GATE);
             entries.add(GATE_LIGHT);
+            entries.add(HEAT_COIL);
         });
     }
 }

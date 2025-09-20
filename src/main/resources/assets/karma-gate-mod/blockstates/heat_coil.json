@@ -1,0 +1,6 @@
+{
+  "variants": {
+    "axis=x": { "model": "karma-gate-mod:block/heat_coil", "y": 90 },
+    "axis=z": { "model": "karma-gate-mod:block/heat_coil" }
+  }
+}

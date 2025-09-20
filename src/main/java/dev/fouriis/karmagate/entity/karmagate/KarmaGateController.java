@@ -33,6 +33,10 @@ public final class KarmaGateController {
     private BlockPos gate1 = null; // side 1 (NEG offset)
     private BlockPos gate2 = null; // side 2 (POS offset)
 
+    // At the top of KarmaGateController (with your other timing constants)
+    private static final int CIRCULAR_STEP_TICKS = 6; // how long each circular step lasts
+
+
     // --- runtime state ---
     private int prepare1 = 0;
     private int prepare2 = 0;
@@ -124,10 +128,13 @@ public final class KarmaGateController {
         }
 
         // Pending reset delay (controller is closed; reopen the outer gate after short pause). Lights off.
+        // Pending reset delay (controller is closed; reopen the outer gate after short pause)
         if (pendingResetSide != CycleSide.NONE) {
             if (controllerBE.isOpen()) controllerBE.setOpen(false);
-            lightsSide1.allOff(world);
-            lightsSide2.allOff(world);
+
+            // NEW: while resetting, blink all lights on both sides together (10 on / 10 off)
+            lightsSide1.blinkAll(world, lampBlink);
+            lightsSide2.blinkAll(world, lampBlink);
 
             if (resetDelayTicks > 0) {
                 resetDelayTicks--;
@@ -138,6 +145,7 @@ public final class KarmaGateController {
             cooldownTicks = COOLDOWN_TICKS_MC;
             return;
         }
+
 
         switch (cycleSide) {
             case NONE -> {
@@ -295,36 +303,41 @@ public final class KarmaGateController {
      * If fewer than 2 lamps exist total, both sides blinkAll as a fallback.
      */
     private void chaseCircularWaitSequence(World world) {
-        // Build circular order from the two groups:
-        // S1 bottom, S2 bottom, S2 top, S1 top
-        List<GateLightGroup.LightRef> order = new ArrayList<>(4);
-        GateLightGroup.LightRef s1b = lightsSide1.bottom();
-        GateLightGroup.LightRef s1t = lightsSide1.top();
-        GateLightGroup.LightRef s2b = lightsSide2.bottom();
-        GateLightGroup.LightRef s2t = lightsSide2.top();
-
-        if (s1b != null) order.add(s1b);
-        if (s2b != null) order.add(s2b);
-        if (s2t != null) order.add(s2t);
-        if (s1t != null) order.add(s1t);
-
-        if (order.size() < 2) {
-            // Not enough distinct lamps for a chase — just blink everything
+        // If we don’t have at least any two lamps total, fall back to blinking all.
+        int total =
+                lightsSide1.getRefs().size() +
+                lightsSide2.getRefs().size();
+        if (total < 2) {
             lightsSide1.blinkAll(world, lampBlink);
             lightsSide2.blinkAll(world, lampBlink);
             return;
         }
 
-        // Four 10-tick windows per cycle: 0–9, 10–19, 20–29, 30–39
-        int step = (lampBlink / 10) % order.size();
+        // Four steps per cycle
+        int step = (lampBlink / CIRCULAR_STEP_TICKS) % 4;
 
-        // Turn all off first
+        // Turn both sides off first
         lightsSide1.allOff(world);
         lightsSide2.allOff(world);
 
-        // Light just the current one
-        BlockPos pos = order.get(step).pos;
-        setLamp(world, pos, true);
+        // Determine direction of travel: SIDE1 -> SIDE2 is clockwise, SIDE2 -> SIDE1 is counterclockwise
+        boolean clockwise = (cycleSide == CycleSide.SIDE1);
+
+        if (clockwise) {
+            switch (step) {
+                case 0 -> lightsSide1.lightBottomPairOnly(world); // S1 bottom pair
+                case 1 -> lightsSide2.lightBottomPairOnly(world); // S2 bottom pair
+                case 2 -> lightsSide2.lightTopPairOnly(world);    // S2 top pair
+                case 3 -> lightsSide1.lightTopPairOnly(world);    // S1 top pair
+            }
+        } else if (cycleSide == CycleSide.SIDE2) {
+            switch (step) {
+                case 0 -> lightsSide2.lightBottomPairOnly(world); // S2 bottom pair
+                case 1 -> lightsSide1.lightBottomPairOnly(world); // S1 bottom pair
+                case 2 -> lightsSide1.lightTopPairOnly(world);    // S1 top pair
+                case 3 -> lightsSide2.lightTopPairOnly(world);    // S2 top pair
+            }
+        }
     }
 
     private void setLamp(World world, BlockPos pos, boolean on) {
@@ -361,28 +374,36 @@ public final class KarmaGateController {
         nbt.putString("cycleSide", cycleSide.name());
         nbt.putString("pendingResetSide", pendingResetSide.name());
         nbt.putInt("resetDelayTicks", resetDelayTicks);
+
+        // Save connected gate lights
+        lightsSide1.writeNbt(nbt, "lightsSide1");
+        lightsSide2.writeNbt(nbt, "lightsSide2");
     }
 
     public void readNbt(NbtCompound nbt) {
-        gate1 = nbt.contains("gate1") ? new BlockPos(
-                nbt.getCompound("gate1").getInt("x"),
-                nbt.getCompound("gate1").getInt("y"),
-                nbt.getCompound("gate1").getInt("z")) : null;
+    gate1 = nbt.contains("gate1") ? new BlockPos(
+        nbt.getCompound("gate1").getInt("x"),
+        nbt.getCompound("gate1").getInt("y"),
+        nbt.getCompound("gate1").getInt("z")) : null;
 
-        gate2 = nbt.contains("gate2") ? new BlockPos(
-                nbt.getCompound("gate2").getInt("x"),
-                nbt.getCompound("gate2").getInt("y"),
-                nbt.getCompound("gate2").getInt("z")) : null;
+    gate2 = nbt.contains("gate2") ? new BlockPos(
+        nbt.getCompound("gate2").getInt("x"),
+        nbt.getCompound("gate2").getInt("y"),
+        nbt.getCompound("gate2").getInt("z")) : null;
 
-        prepare1 = nbt.getInt("prepare1");
-        prepare2 = nbt.getInt("prepare2");
-        washTicks = nbt.getInt("washTicks");
-        cooldownTicks = nbt.getInt("cooldownTicks");
-        lampBlink = nbt.getInt("lampBlink");
-        try { cycleSide = CycleSide.valueOf(nbt.getString("cycleSide")); }
-        catch (IllegalArgumentException e) { cycleSide = CycleSide.NONE; }
-        try { pendingResetSide = CycleSide.valueOf(nbt.getString("pendingResetSide")); }
-        catch (IllegalArgumentException e) { pendingResetSide = CycleSide.NONE; }
-        resetDelayTicks = nbt.getInt("resetDelayTicks");
+    prepare1 = nbt.getInt("prepare1");
+    prepare2 = nbt.getInt("prepare2");
+    washTicks = nbt.getInt("washTicks");
+    cooldownTicks = nbt.getInt("cooldownTicks");
+    lampBlink = nbt.getInt("lampBlink");
+    try { cycleSide = CycleSide.valueOf(nbt.getString("cycleSide")); }
+    catch (IllegalArgumentException e) { cycleSide = CycleSide.NONE; }
+    try { pendingResetSide = CycleSide.valueOf(nbt.getString("pendingResetSide")); }
+    catch (IllegalArgumentException e) { pendingResetSide = CycleSide.NONE; }
+    resetDelayTicks = nbt.getInt("resetDelayTicks");
+
+    // Load connected gate lights
+    lightsSide1.readNbt(nbt, "lightsSide1");
+    lightsSide2.readNbt(nbt, "lightsSide2");
     }
 }

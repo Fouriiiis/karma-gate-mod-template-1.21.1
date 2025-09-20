@@ -1,6 +1,7 @@
 package dev.fouriis.karmagate.entity.karmagate;
 
 import dev.fouriis.karmagate.KarmaGateMod;
+import dev.fouriis.karmagate.block.karmagate.GateLightBlock;
 import dev.fouriis.karmagate.entity.ModBlockEntities;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.entity.BlockEntity;
@@ -35,8 +36,6 @@ public class GateLightBlockEntity extends BlockEntity implements GeoBlockEntity 
     /** Client flag to (re)pose once after fresh NBT arrives. */
     private boolean clientInitialized = false;
 
-    // -------------------------------------------------------------------------
-
     public GateLightBlockEntity(BlockPos pos, BlockState state) {
         this(ModBlockEntities.GATE_LIGHT_BLOCK_ENTITY, pos, state);
     }
@@ -45,91 +44,74 @@ public class GateLightBlockEntity extends BlockEntity implements GeoBlockEntity 
         super(type, pos, state);
     }
 
-    // -------------------------------------------------------------------------
-    // Public API
-    // -------------------------------------------------------------------------
-
     public void toggle() {
         if (world == null || world.isClient) return;
         setLit(!lit);
     }
 
-    /** Server-only setter that syncs and triggers the appropriate animation. */
+    /** Server-only setter that syncs state, block light, and animation. */
     public void setLit(boolean value) {
         if (world == null || world.isClient) return;
         if (this.lit == value) return;
 
         this.lit = value;
+
+        // Sync the BlockState's LIT property so luminance updates immediately
+        BlockState st = world.getBlockState(pos);
+        if (st.getBlock() instanceof GateLightBlock && st.contains(GateLightBlock.LIT)) {
+            if (st.get(GateLightBlock.LIT) != value) {
+                world.setBlockState(pos, st.with(GateLightBlock.LIT, value), 3); // notifies + relights
+            }
+        }
+
+        // Network sync for BE data + render
         markDirtySync();
 
-        // Play the transition and hold on the last frame.
+        // Play the flip animation and hold on last frame
         this.triggerAnim("controller", value ? "on" : "off");
         KarmaGateMod.LOGGER.debug("GateLight @{} -> {}", pos, value ? "ON" : "OFF");
     }
 
-    public boolean isLit() {
-        return lit;
-    }
+    public boolean isLit() { return lit; }
 
-    /** Optional ticker (no logic needed right now). */
     public void tick(World world, BlockPos pos, BlockState state, GateLightBlockEntity be) {
         // no-op
     }
 
-    // -------------------------------------------------------------------------
-    // GeckoLib
-    // -------------------------------------------------------------------------
+    // ---------------- GeckoLib ----------------
 
     @Override
     public void registerControllers(AnimatableManager.ControllerRegistrar registrar) {
         AnimationController<GateLightBlockEntity> controller =
             new AnimationController<>(this, "controller", 0, this::predicate);
 
-        // Each trigger plays once and then HOLDS on the last frame so the light
-        // remains visually ON or OFF without needing separate *_idle clips.
         controller
-            .triggerableAnim("on",
-                RawAnimation.begin()
-                    .then(ANIM_ON, Animation.LoopType.HOLD_ON_LAST_FRAME))
-            .triggerableAnim("off",
-                RawAnimation.begin()
-                    .then(ANIM_OFF, Animation.LoopType.HOLD_ON_LAST_FRAME));
+            .triggerableAnim("on",  RawAnimation.begin().then(ANIM_ON,  Animation.LoopType.HOLD_ON_LAST_FRAME))
+            .triggerableAnim("off", RawAnimation.begin().then(ANIM_OFF, Animation.LoopType.HOLD_ON_LAST_FRAME));
 
         registrar.add(controller);
     }
 
     private PlayState predicate(AnimationState<GateLightBlockEntity> state) {
-        // On the client: when we first receive NBT, snap to the correct pose by
-        // setting the ON/OFF animation and holding on its last frame.
         if (world != null && world.isClient && !clientInitialized) {
             AnimationController<GateLightBlockEntity> ctrl = state.getController();
             ctrl.forceAnimationReset();
-            ctrl.setAnimation(
-                RawAnimation.begin().then(lit ? ANIM_ON : ANIM_OFF, Animation.LoopType.HOLD_ON_LAST_FRAME)
-            );
+            ctrl.setAnimation(RawAnimation.begin()
+                .then(lit ? ANIM_ON : ANIM_OFF, Animation.LoopType.HOLD_ON_LAST_FRAME));
             clientInitialized = true;
             return PlayState.CONTINUE;
         }
         return PlayState.CONTINUE;
     }
 
-    @Override
-    public AnimatableInstanceCache getAnimatableInstanceCache() {
-        return cache;
-    }
+    @Override public AnimatableInstanceCache getAnimatableInstanceCache() { return cache; }
 
-    // -------------------------------------------------------------------------
-    // Sync & NBT
-    // -------------------------------------------------------------------------
+    // ---------------- Sync & NBT ----------------
 
     private void markDirtySync() {
         markDirty();
-        if (world instanceof ServerWorld sw) {
-            sw.getChunkManager().markForUpdate(pos); // send BE update to clients
-        }
-        if (world != null) {
-            world.updateListeners(pos, getCachedState(), getCachedState(), 3);
-        }
+        if (world instanceof ServerWorld sw) sw.getChunkManager().markForUpdate(pos);
+        if (world != null) world.updateListeners(pos, getCachedState(), getCachedState(), 3);
     }
 
     @Override
@@ -143,19 +125,17 @@ public class GateLightBlockEntity extends BlockEntity implements GeoBlockEntity 
         super.readNbt(nbt, lookup);
         this.lit = nbt.getBoolean("lit");
 
-        // Force a one-time re-pose on the client after fresh data arrives.
-        if (world != null && world.isClient) {
-            clientInitialized = false;
+        // Keep block state's LIT in sync on both sides (server does real relight)
+        if (world != null) {
+            BlockState st = world.getBlockState(pos);
+            if (st.getBlock() instanceof GateLightBlock && st.contains(GateLightBlock.LIT)
+                && st.get(GateLightBlock.LIT) != lit) {
+                world.setBlockState(pos, st.with(GateLightBlock.LIT, lit), 3);
+            }
+            if (world.isClient) clientInitialized = false;
         }
     }
 
-    @Override
-    public NbtCompound toInitialChunkDataNbt(RegistryWrapper.WrapperLookup lookup) {
-        return createNbt(lookup);
-    }
-
-    @Override
-    public Packet<ClientPlayPacketListener> toUpdatePacket() {
-        return BlockEntityUpdateS2CPacket.create(this);
-    }
+    @Override public NbtCompound toInitialChunkDataNbt(RegistryWrapper.WrapperLookup lookup) { return createNbt(lookup); }
+    @Override public Packet<ClientPlayPacketListener> toUpdatePacket() { return BlockEntityUpdateS2CPacket.create(this); }
 }

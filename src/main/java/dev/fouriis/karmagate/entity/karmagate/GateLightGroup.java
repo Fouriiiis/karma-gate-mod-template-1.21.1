@@ -13,15 +13,63 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Finds, orders, and animates nearby GateLightBlockEntity lamps for a single side of a gate.
- * Side mapping:
- *  - SIDE1 = controller normal-axis NEGATIVE (x/z < center)
- *  - SIDE2 = controller normal-axis POSITIVE (x/z > center)
- * Ordering: within a side, lights are sorted by vertical position (bottom -> top).
+ * Manages gate lights for one side (SIDE1 / SIDE2).
+ *
+ * Per-side we now support up to 4 lamps: two columns along the gate axis (NEAR/FAR),
+ * each column can have a bottom and a top. We sort each column bottom->top.
+ *
+ * Mirroring rule:
+ *  - "bottom pair" lights NEAR-bottom + FAR-top
+ *  - "top pair"    lights NEAR-top    + FAR-bottom
  */
 public class GateLightGroup {
+    /** Save connected gate lights to NBT. */
+    public void writeNbt(net.minecraft.nbt.NbtCompound nbt, String key) {
+        net.minecraft.nbt.NbtList nearList = new net.minecraft.nbt.NbtList();
+        for (LightRef ref : nearCol) {
+            net.minecraft.nbt.NbtCompound tag = new net.minecraft.nbt.NbtCompound();
+            tag.putInt("x", ref.pos.getX());
+            tag.putInt("y", ref.pos.getY());
+            tag.putInt("z", ref.pos.getZ());
+            nearList.add(tag);
+        }
+        nbt.put(key + "_near", nearList);
 
-    public enum Side { SIDE1, SIDE2 }
+        net.minecraft.nbt.NbtList farList = new net.minecraft.nbt.NbtList();
+        for (LightRef ref : farCol) {
+            net.minecraft.nbt.NbtCompound tag = new net.minecraft.nbt.NbtCompound();
+            tag.putInt("x", ref.pos.getX());
+            tag.putInt("y", ref.pos.getY());
+            tag.putInt("z", ref.pos.getZ());
+            farList.add(tag);
+        }
+        nbt.put(key + "_far", farList);
+    }
+
+    /** Load connected gate lights from NBT. */
+    public void readNbt(net.minecraft.nbt.NbtCompound nbt, String key) {
+        nearCol.clear();
+        farCol.clear();
+        if (nbt.contains(key + "_near")) {
+            net.minecraft.nbt.NbtList nearList = nbt.getList(key + "_near", 10);
+            for (int i = 0; i < nearList.size(); i++) {
+                net.minecraft.nbt.NbtCompound tag = nearList.getCompound(i);
+                BlockPos pos = new BlockPos(tag.getInt("x"), tag.getInt("y"), tag.getInt("z"));
+                nearCol.add(new LightRef(pos));
+            }
+        }
+        if (nbt.contains(key + "_far")) {
+            net.minecraft.nbt.NbtList farList = nbt.getList(key + "_far", 10);
+            for (int i = 0; i < farList.size(); i++) {
+                net.minecraft.nbt.NbtCompound tag = farList.getCompound(i);
+                BlockPos pos = new BlockPos(tag.getInt("x"), tag.getInt("y"), tag.getInt("z"));
+                farCol.add(new LightRef(pos));
+            }
+        }
+    }
+
+    public enum Side { SIDE1, SIDE2 } // SIDE1 = normal-axis NEG; SIDE2 = normal-axis POS
+    private static final int BLINK_PERIOD_TICKS = 15;
 
     /** Immutable reference to a light with ordering info. */
     public static final class LightRef {
@@ -34,17 +82,21 @@ public class GateLightGroup {
     }
 
     private final Side side;
-    private final List<LightRef> lights = new ArrayList<>();
+
+    // Split by gate-axis sign: NEAR = gate-axis negative; FAR = gate-axis positive (relative to controller center)
+    private final List<LightRef> nearCol = new ArrayList<>(); // bottom->top
+    private final List<LightRef> farCol  = new ArrayList<>(); // bottom->top
 
     public GateLightGroup(Side side) { this.side = side; }
     public Side side() { return side; }
 
     /** Clears and (re)binds this side's lights relative to a controller/gate. */
     public void bindLights(World world, BlockPos gateCenter, Direction.Axis gateAxis, int radius) {
-        lights.clear();
+        nearCol.clear();
+        farCol.clear();
         if (world == null) return;
 
-        // Normal axis is perpendicular to the gate axis
+        // Normal axis splits SIDE1 vs SIDE2; gate axis splits NEAR vs FAR
         Direction.Axis normalAxis = (gateAxis == Direction.Axis.X) ? Direction.Axis.Z : Direction.Axis.X;
 
         BlockPos min = gateCenter.add(-radius, -radius, -radius);
@@ -61,36 +113,46 @@ public class GateLightGroup {
                     BlockEntity be = world.getBlockEntity(m);
                     if (!(be instanceof GateLightBlockEntity)) continue;
 
-                    // sign along controller's normal axis
-                    double delta = (normalAxis == Direction.Axis.X) ? (x - cx) : (z - cz);
+                    // Which SIDE by normal-axis sign
+                    double normalDelta = (normalAxis == Direction.Axis.X) ? (x - cx) : (z - cz);
+                    Side computedSide = (normalDelta < 0) ? Side.SIDE1 : Side.SIDE2;
+                    if (computedSide != this.side) continue;
 
-                    // Assign to SIDE1 (NEG) or SIDE2 (POS)
-                    Side computed = (delta < 0) ? Side.SIDE1 : Side.SIDE2;
-                    if (computed != this.side) continue;
+                    // Which column by gate-axis sign (negative=NEAR, positive=FAR)
+                    double gateDelta = (gateAxis == Direction.Axis.X) ? (x - cx) : (z - cz);
+                    List<LightRef> col = (gateDelta < 0) ? nearCol : farCol;
 
-                    lights.add(new LightRef(m.toImmutable()));
+                    col.add(new LightRef(m.toImmutable()));
                 }
             }
         }
 
-        // Order by vertical (bottom -> top)
-        lights.sort(Comparator.comparingDouble(l -> l.y));
-        KarmaGateMod.LOGGER.info("GateLightGroup {} bound {} lights near {}", side, lights.size(), gateCenter);
+        // Sort each column bottom -> top
+        nearCol.sort(Comparator.comparingDouble(l -> l.y));
+        farCol.sort(Comparator.comparingDouble(l -> l.y));
+
+        KarmaGateMod.LOGGER.info("GateLightGroup {} bound NEAR:{} FAR:{} near {}",
+                side, nearCol.size(), farCol.size(), gateCenter);
     }
 
-    /** Unmodifiable ordered refs (bottom -> top). */
+    /** Bottom (near column), or null. */
+    public LightRef bottomNear() { return nearCol.isEmpty() ? null : nearCol.get(0); }
+
+    /** Top (near column), or null. */
+    public LightRef topNear() { return nearCol.isEmpty() ? null : nearCol.get(nearCol.size() - 1); }
+
+    /** Bottom (far column), or null. */
+    public LightRef bottomFar() { return farCol.isEmpty() ? null : farCol.get(0); }
+
+    /** Top (far column), or null. */
+    public LightRef topFar() { return farCol.isEmpty() ? null : farCol.get(farCol.size() - 1); }
+
+    /** Unmodifiable all refs (for debugging/tools). */
     public List<LightRef> getRefs() {
-        return Collections.unmodifiableList(lights);
-    }
-
-    /** Bottom lamp (or null). */
-    public LightRef bottom() {
-        return lights.isEmpty() ? null : lights.get(0);
-    }
-
-    /** Top lamp (or null). */
-    public LightRef top() {
-        return lights.isEmpty() ? null : lights.get(lights.size() - 1);
+        List<LightRef> all = new ArrayList<>(nearCol.size() + farCol.size());
+        all.addAll(nearCol);
+        all.addAll(farCol);
+        return Collections.unmodifiableList(all);
     }
 
     /** Force all lights off (e.g., on cooldown/end of cycle). */
@@ -98,38 +160,76 @@ public class GateLightGroup {
         setAll(world, false);
     }
 
-    /** Blink all lights on this side together at 10-tick cadence. */
+    /** Blink all lights together at 10-tick cadence. */
+    /** Blink all lights together at half-period cadence. */
     public void blinkAll(World world, int tick) {
-        boolean on = (tick % 20) < 10; // 10 ticks on, 10 off
-        for (LightRef r : lights) setOne(world, r.pos, on);
+        boolean on = (tick % BLINK_PERIOD_TICKS) < (BLINK_PERIOD_TICKS / 2);
+        for (LightRef r : nearCol) setOne(world, r.pos, on);
+        for (LightRef r : farCol)  setOne(world, r.pos, on);
     }
 
-    /** Alternate bottom vs top every 10 ticks while preparing in MiddleClosed. */
+    /**
+     * Alternate bottom vs top every half-period while preparing.
+     * Mirrored: bottom-pair = NEAR-bottom + FAR-top, top-pair = NEAR-top + FAR-bottom.
+     */
     public void blinkBottomTopAlternate(World world, int tick) {
-        if (lights.isEmpty()) return;
-
-        boolean bottomOn = (tick % 20) < 10;
-
-        for (int i = 0; i < lights.size(); i++) {
-            boolean on;
-            if (lights.size() == 1) {
-                on = bottomOn;
-            } else if (i == 0) {
-                on = bottomOn;               // bottom
-            } else if (i == lights.size() - 1) {
-                on = !bottomOn;              // top
-            } else {
-                on = false;                  // middle lamps off
-            }
-            setOne(world, lights.get(i).pos, on);
+        boolean bottomOn = (tick % BLINK_PERIOD_TICKS) < (BLINK_PERIOD_TICKS / 2);
+        setAll(world, false);
+        if (bottomOn) {
+            lightBottomPair(world, true);
+        } else {
+            lightTopPair(world, true);
         }
+    }
+
+
+    /** Light the “bottom pair”: NEAR-bottom + FAR-top (mirror). */
+    public void lightBottomPairOnly(World world) {
+        setAll(world, false);
+        lightBottomPair(world, true);
+    }
+
+    /** Light the “top pair”: NEAR-top + FAR-bottom (mirror). */
+    public void lightTopPairOnly(World world) {
+        setAll(world, false);
+        lightTopPair(world, true);
     }
 
     // ---------------- internals ----------------
 
+    private void lightBottomPair(World world, boolean on) {
+        LightRef nb = bottomNear();
+        LightRef ft = topFar();
+        if (nb != null) setOne(world, nb.pos, on);
+        if (ft != null) setOne(world, ft.pos, on);
+        // if neither exists, fallback: try any one available
+        if (nb == null && ft == null) {
+            // degrade: try near top then far bottom
+            LightRef alt = topNear();
+            if (alt == null) alt = bottomFar();
+            if (alt != null) setOne(world, alt.pos, on);
+        }
+    }
+
+    private void lightTopPair(World world, boolean on) {
+        LightRef nt = topNear();
+        LightRef fb = bottomFar();
+        if (nt != null) setOne(world, nt.pos, on);
+        if (fb != null) setOne(world, fb.pos, on);
+        if (nt == null && fb == null) {
+            LightRef alt = bottomNear();
+            if (alt == null) alt = topFar();
+            if (alt != null) setOne(world, alt.pos, on);
+        }
+    }
+
     private void setAll(World world, boolean lit) {
         if (!(world instanceof ServerWorld sw)) return;
-        for (LightRef ref : lights) {
+        for (LightRef ref : nearCol) {
+            BlockEntity be = sw.getBlockEntity(ref.pos);
+            if (be instanceof GateLightBlockEntity lamp) lamp.setLit(lit);
+        }
+        for (LightRef ref : farCol) {
             BlockEntity be = sw.getBlockEntity(ref.pos);
             if (be instanceof GateLightBlockEntity lamp) lamp.setLit(lit);
         }
