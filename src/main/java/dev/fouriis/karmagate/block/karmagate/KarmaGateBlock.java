@@ -1,10 +1,14 @@
 package dev.fouriis.karmagate.block.karmagate;
 
 import com.mojang.serialization.MapCodec;
+
+import dev.fouriis.karmagate.block.ModBlocks;
 import dev.fouriis.karmagate.entity.ModBlockEntities;
 import dev.fouriis.karmagate.entity.karmagate.KarmaGateBlockEntity;
+import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.BlockWithEntity;
+import net.minecraft.block.EntityShapeContext;
 import net.minecraft.block.ShapeContext;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.block.entity.BlockEntityTicker;
@@ -30,11 +34,15 @@ public class KarmaGateBlock extends BlockWithEntity {
     public static final MapCodec<KarmaGateBlock> CODEC = createCodec(KarmaGateBlock::new);
     @Override public MapCodec<KarmaGateBlock> getCodec() { return CODEC; }
 
-    // Gate uses 2 possible axes (east–west or north–south)
+    // ===== Shared dimensions (keep in sync with KarmaGatePartBlock) =====
+    public static final int GATE_WIDTH  = KarmaGatePartBlock.GATE_WIDTH;   // perpendicular span
+    public static final int GATE_HEIGHT = KarmaGatePartBlock.GATE_HEIGHT;  // vertical span
+    public static final int GATE_DEPTH  = KarmaGatePartBlock.GATE_DEPTH;   // along axis (0 = base slice)
+
     public static final EnumProperty<Direction.Axis> AXIS = Properties.HORIZONTAL_AXIS;
 
     public KarmaGateBlock(Settings settings) {
-        super(settings);
+        super(settings.nonOpaque());
         setDefaultState(getStateManager().getDefaultState().with(AXIS, Direction.Axis.Z));
     }
 
@@ -44,21 +52,44 @@ public class KarmaGateBlock extends BlockWithEntity {
     }
 
     @Override
-    protected void appendProperties(StateManager.Builder<net.minecraft.block.Block, BlockState> builder) {
+    protected void appendProperties(StateManager.Builder<Block, BlockState> builder) {
         builder.add(AXIS);
     }
 
     @Override
     public BlockState getPlacementState(ItemPlacementContext ctx) {
-        // Place along the player’s facing axis (like logs)
-        return getDefaultState().with(AXIS, ctx.getHorizontalPlayerFacing().getAxis());
+        BlockState s = getDefaultState().with(AXIS, ctx.getHorizontalPlayerFacing().getAxis());
+        World w = ctx.getWorld();
+        BlockPos base = ctx.getBlockPos();
+        Direction.Axis axis = s.get(AXIS);
+
+        int halfW = (GATE_WIDTH - 1) / 2;
+
+        for (int h = 0; h < GATE_HEIGHT; h++) {
+            for (int d = 0; d < GATE_DEPTH; d++) {
+                for (int a = -halfW; a <= halfW; a++) {
+                    // NOTE: depth goes FORWARD along the gate axis -> place at -d from base so resolveBase uses +d
+                    BlockPos p = (axis == Direction.Axis.X)
+                            ? base.add(-d, h,  a)   // X axis: depth = -d on X, width = a on Z
+                            : base.add( a, h, -d);  // Z axis: width = a on X, depth = -d on Z
+                    if (!w.getBlockState(p).canReplace(ctx)) return null;
+                }
+            }
+        }
+        return s;
+    }
+
+    @Override
+    public void onPlaced(World world, BlockPos pos, BlockState state,
+                         net.minecraft.entity.LivingEntity placer, net.minecraft.item.ItemStack stack) {
+        super.onPlaced(world, pos, state, placer, stack);
+        if (!world.isClient) spawnParts(world, pos, state);
     }
 
     @Override
     public BlockState rotate(BlockState state, BlockRotation rotation) {
         if (rotation == BlockRotation.CLOCKWISE_90 || rotation == BlockRotation.COUNTERCLOCKWISE_90) {
-            Direction.Axis current = state.get(AXIS);
-            return state.with(AXIS, current == Direction.Axis.X ? Direction.Axis.Z : Direction.Axis.X);
+            return state.with(AXIS, state.get(AXIS) == Direction.Axis.X ? Direction.Axis.Z : Direction.Axis.X);
         }
         return state;
     }
@@ -77,14 +108,28 @@ public class KarmaGateBlock extends BlockWithEntity {
     }
 
     @Override
+    public void onStateReplaced(BlockState state, World world, BlockPos pos,
+                                BlockState newState, boolean moved) {
+        super.onStateReplaced(state, world, pos, newState, moved);
+        if (!world.isClient && state.getBlock() != newState.getBlock()) {
+            clearPartsFromBase(world, pos, state);
+        }
+    }
+
+    @Override
+    public BlockState onBreak(World world, BlockPos pos, BlockState state, PlayerEntity player) {
+        super.onBreak(world, pos, state, player);
+        if (!world.isClient) clearPartsFromBase(world, pos, state);
+        return state;
+    }
+
+    @Override
     public ActionResult onUse(BlockState state, World world, BlockPos pos,
                               PlayerEntity player, BlockHitResult hit) {
         if (world.isClient) return ActionResult.SUCCESS;
-
         BlockEntity be = world.getBlockEntity(pos);
         if (!(be instanceof KarmaGateBlockEntity gate)) return ActionResult.PASS;
 
-        // Crouch + OP: configure this block as controller and bind nearby gates
         if (player.isSneaking() && player.hasPermissionLevel(2)) {
             int bound = gate.configureAsControllerAndBindNearest(15);
             if (player instanceof ServerPlayerEntity serverPlayer) {
@@ -95,57 +140,94 @@ public class KarmaGateBlock extends BlockWithEntity {
             return ActionResult.SUCCESS;
         }
 
-        // Normal use: toggle open/closed
-        gate.toggle();
+        if (player.isCreative()) {
+            gate.toggle();
+        }
         return ActionResult.SUCCESS;
     }
 
-    /* -------------------- Shapes (collision & outline) -------------------- */
+    /* ---------- Shapes: full cube when closed; empty when open ---------- */
 
-    /** Returns true if the gate BE at this pos is currently open. */
     private static boolean isOpen(World world, BlockPos pos) {
         BlockEntity be = world.getBlockEntity(pos);
         return (be instanceof KarmaGateBlockEntity k) && k.isOpen();
     }
 
-    /**
-     * 3 blocks wide × 5 blocks tall × 1 block thick slab centered on this block.
-     * Width is along the gate's axis (X or Z), thickness is the perpendicular axis.
-     */
-    private static VoxelShape makeClosedShape(BlockState state) {
-        Direction.Axis axis = state.get(AXIS);
+    @Override
+public VoxelShape getOutlineShape(BlockState state, BlockView view, BlockPos pos, ShapeContext ctx) {
+    if (ctx instanceof EntityShapeContext esc && esc.getEntity() instanceof PlayerEntity player && player.isCreative()) {
+        // Creative players always see a hitbox
+        return VoxelShapes.fullCube();
+    }
 
-        // We build a shape that extends one block to each side along the "wide" axis,
-        // and stays within this block on the "thin" axis. Height is 5 blocks.
-        double minWide = -1.0; // one block to the negative side
-        double maxWide =  2.0; // one block to the positive side
-        double minThin =  0.0;
-        double maxThin =  1.0;
-        double minY    =  0.0;
-        double maxY    =  5.0;
+    if (view instanceof World w && isOpen(w, pos)) {
+        return VoxelShapes.empty();
+    }
+    return VoxelShapes.fullCube();
+}
 
-        if (axis == Direction.Axis.X) {
-            // 3 wide along X, 1 thick along Z
-            return VoxelShapes.cuboid(minWide, minY, minThin, maxWide, maxY, maxThin);
-        } else {
-            // 3 wide along Z, 1 thick along X
-            return VoxelShapes.cuboid(minThin, minY, minWide, maxThin, maxY, maxWide);
+@Override
+public VoxelShape getCollisionShape(BlockState state, BlockView view, BlockPos pos, ShapeContext ctx) {
+    if (view instanceof World w && isOpen(w, pos)) {
+        return VoxelShapes.empty();
+    }
+    return VoxelShapes.fullCube();
+}
+
+    /* ---------- Spawn & clear parts ---------- */
+
+    private void spawnParts(World w, BlockPos basePos, BlockState baseState) {
+        Direction.Axis axis = baseState.get(AXIS);
+        int halfW = (GATE_WIDTH - 1) / 2;
+
+        for (int h = 0; h < GATE_HEIGHT; h++) {
+            for (int d = 0; d < GATE_DEPTH; d++) {
+                for (int a = -halfW; a <= halfW; a++) {
+                    if (h == 0 && d == 0 && a == 0) continue;
+
+                    // depth goes FORWARD => place at -d along axis
+                    BlockPos p = (axis == Direction.Axis.X)
+                            ? basePos.add(-d, h,  a)
+                            : basePos.add( a, h, -d);
+
+                    if (!w.getBlockState(p).isAir()) continue;
+
+                    BlockState partState = ModBlocks.KARMA_GATE_PART.getDefaultState()
+                            .with(KarmaGatePartBlock.AXIS,   axis)
+                            .with(KarmaGatePartBlock.HEIGHT, h)
+                            .with(KarmaGatePartBlock.AOFF,   a + halfW) // [-halfW..halfW] -> [0..W-1]
+                            .with(KarmaGatePartBlock.DOFF,   d);        // 0..DEPTH-1
+
+                    w.setBlockState(p, partState, Block.NOTIFY_ALL);
+
+                    BlockEntity be = w.getBlockEntity(p);
+                    if (be instanceof KarmaGatePartBlock.PartBE partBe) {
+                        partBe.setBasePos(basePos);
+                    }
+                }
+            }
         }
     }
 
-    @Override
-    public VoxelShape getCollisionShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
-        if (world instanceof World w && isOpen(w, pos)) {
-            return VoxelShapes.empty();
-        }
-        return makeClosedShape(state);
-    }
+    private void clearPartsFromBase(World w, BlockPos basePos, BlockState baseState) {
+        Direction.Axis axis = baseState.get(AXIS);
+        int halfW = (GATE_WIDTH - 1) / 2;
 
-    @Override
-    public VoxelShape getOutlineShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
-        if (world instanceof World w && isOpen(w, pos)) {
-            return VoxelShapes.empty();
+        for (int h = 0; h < GATE_HEIGHT; h++) {
+            for (int d = 0; d < GATE_DEPTH; d++) {
+                for (int a = -halfW; a <= halfW; a++) {
+                    if (h == 0 && d == 0 && a == 0) continue;
+
+                    // mirror spawn positions for cleanup
+                    BlockPos p = (axis == Direction.Axis.X)
+                            ? basePos.add(-d, h,  a)
+                            : basePos.add( a, h, -d);
+
+                    if (w.getBlockState(p).getBlock() == ModBlocks.KARMA_GATE_PART) {
+                        w.breakBlock(p, false);
+                    }
+                }
+            }
         }
-        return makeClosedShape(state);
     }
 }

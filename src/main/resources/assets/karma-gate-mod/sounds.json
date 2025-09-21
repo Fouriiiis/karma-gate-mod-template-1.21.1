@@ -1,0 +1,12 @@
+{
+  "steamloop2": {
+    "subtitle": "Steam hissing",
+    "sounds": [
+      {
+        "name": "karma-gate-mod:steamloop2",
+        "stream": true,
+        "attenuation_distance": 32
+      }
+    ]
+  }
+}

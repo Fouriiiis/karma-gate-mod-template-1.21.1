@@ -2,6 +2,7 @@ package dev.fouriis.karmagate.entity.karmagate;
 
 import dev.fouriis.karmagate.KarmaGateMod;
 import dev.fouriis.karmagate.block.karmagate.KarmaGateBlock;
+import dev.fouriis.karmagate.block.karmagate.WaterStreamBlock;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.nbt.NbtCompound;
@@ -13,163 +14,194 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Owns all airlock timing/state, trigger areas, cooldowns, short reset delay,
- * and nearby gate lights (optional).
- * No new block: this is embedded by KarmaGateBlockEntity when that BE is a controller.
+ * Airlock controller simplified into RW-like Mode states.
+ * Binds lights + effect blocks (water/heat). Effect usage is implemented with DRY helpers.
  */
 public final class KarmaGateController {
-    // --- geometry ---
+
+    /* ===================== Modes ===================== */
+    private enum Mode {
+        MiddleClosed,
+        ClosingAirLock,
+        Waiting,
+        OpeningMiddle,
+        MiddleOpen,
+        ClosingMiddle,
+        OpeningSide,
+        Closed,
+        Broken
+    }
+    private enum Side { SIDE1, SIDE2 }
+
+    /* ===================== Geometry ===================== */
     private static final double HALF_SIDE  = 6.5;
-    private static final double OFFSET_POS = 5.0;   // Side 2 (+)  along controller normal axis
-    private static final double OFFSET_NEG = -4.0;  // Side 1 (−)  along controller normal axis
+    private static final double OFFSET_POS = 5.0;   // Side 2 (+) along controller normal
+    private static final double OFFSET_NEG = -4.0;  // Side 1 (−) along controller normal
 
-    // --- timings (20 TPS) ---
-    private static final int PREPARE_TICKS_MC     = 60;   // time standing in side area before cycle begins
-    private static final int WASH_TICKS_MC        = 300;  // waiting period before opening controller/middle
-    private static final int RESET_DELAY_TICKS_MC = 160;  // small delay between closing controller and opening outer gate
-    private static final int COOLDOWN_TICKS_MC    = 500;  // lockout after a cycle completes
+    /* ===================== Timings (20 TPS) ===================== */
+    private static final int PREPARE_TICKS_MC          = 60;
+    private static final int WASH_TICKS_MC             = 100;
+    private static final int COOLDOWN_TICKS_MC         = 500;
 
-    // --- bound outer gates ---
-    private BlockPos gate1 = null; // side 1 (NEG offset)
-    private BlockPos gate2 = null; // side 2 (POS offset)
+    private static final int GATE_ANIMATION_OPEN_TICKS  = 160;
+    private static final int GATE_ANIMATION_CLOSE_TICKS = 160;
 
-    // At the top of KarmaGateController (with your other timing constants)
-    private static final int CIRCULAR_STEP_TICKS = 6; // how long each circular step lasts
+    private static final int CIRCULAR_STEP_TICKS = 6; // for wait light chase
 
+    /* ===================== Bound outer gates ===================== */
+    private BlockPos gate1 = null; // NEG
+    private BlockPos gate2 = null; // POS
 
-    // --- runtime state ---
+    /* ===================== Effect bindings (positions only) ===================== */
+    private final List<BlockPos> waterSide1 = new ArrayList<>();
+    private final List<BlockPos> waterSide2 = new ArrayList<>();
+    private final List<BlockPos> heatSide1  = new ArrayList<>();
+    private final List<BlockPos> heatSide2  = new ArrayList<>();
+
+    /* ===================== Runtime ===================== */
     private int prepare1 = 0;
     private int prepare2 = 0;
     private int washTicks = 0;
     private int cooldownTicks = 0;
-    private int lampBlink = 0; // drives light step timing
+    private int lampBlink = 0;
 
-    private enum CycleSide { NONE, SIDE1, SIDE2 }
-    private CycleSide cycleSide = CycleSide.NONE;
+    // door animation waits
+    private int outerAnimWait = 0;  // used in ClosingAirLock (close) and OpeningSide (open)
+    private int innerAnimWait = 0;  // used in OpeningMiddle (open) and ClosingMiddle (close)
 
-    private CycleSide pendingResetSide = CycleSide.NONE;
-    private int resetDelayTicks = 0;
+    private Mode mode = Mode.MiddleClosed;
+    private Side entrySide = null;   // which side initiated (NEG=SIDE1 / POS=SIDE2)
 
-    // --- lights (optional): SIDE1 = NEG; SIDE2 = POS ---
+    /* ===================== Lights ===================== */
     private final GateLightGroup lightsSide1 = new GateLightGroup(GateLightGroup.Side.SIDE1);
     private final GateLightGroup lightsSide2 = new GateLightGroup(GateLightGroup.Side.SIDE2);
 
-    // parent
+    /* ===================== Parent BE ===================== */
     private final KarmaGateBlockEntity controllerBE;
 
     public KarmaGateController(KarmaGateBlockEntity controllerBE) {
         this.controllerBE = controllerBE;
     }
 
-    /* ===================== External API ===================== */
+    /* ===================== API ===================== */
 
     public void setGates(BlockPos g1, BlockPos g2) {
         this.gate1 = g1;
         this.gate2 = g2;
     }
 
-    /** Bind (or rebind) nearby lights based on controller orientation and position. */
+    /** Bind just lights (kept for compatibility). */
     public void bindLights(World world, BlockPos pos, BlockState state, int radius) {
-        // Rotate axis 90 degrees: swap X <-> Z
         Direction.Axis gateAxis = state.get(KarmaGateBlock.AXIS);
         Direction.Axis rotatedAxis = (gateAxis == Direction.Axis.X) ? Direction.Axis.Z : Direction.Axis.X;
-        lightsSide1.bindLights(world, pos, rotatedAxis, radius); // NEG side
-        lightsSide2.bindLights(world, pos, rotatedAxis, radius); // POS side
-        // Ensure both sides are off after a rebind
+        lightsSide1.bindLights(world, pos, rotatedAxis, radius);
+        lightsSide2.bindLights(world, pos, rotatedAxis, radius);
         lightsSide1.allOff(world);
         lightsSide2.allOff(world);
     }
 
-    public void resetOnBind() {
-        this.prepare1 = 0;
-        this.prepare2 = 0;
-        this.washTicks = 0;
-        this.cooldownTicks = 0;
-        this.cycleSide = CycleSide.NONE;
-        this.pendingResetSide = CycleSide.NONE;
-        this.resetDelayTicks = 0;
-        this.lampBlink = 0;
-        // lights default off; they’ll get re-bound by caller soon after
-    }
+    /** Bind lights and scan + bind nearby WaterStream/HeatCoil BEs split by side. */
+    public void bindLightsAndEffects(World world, BlockPos pos, BlockState state, int radius) {
+        bindLights(world, pos, state, radius);
 
-    public void tick(World world, BlockPos pos, BlockState state) {
-        if (world == null || world.isClient) return;
-
-        lampBlink++; // advance light timing
-
-        // Orientation -> normal axis based on the controller block state
         Direction.Axis gateAxis   = state.get(KarmaGateBlock.AXIS);
         Direction.Axis normalAxis = (gateAxis == Direction.Axis.X) ? Direction.Axis.Z : Direction.Axis.X;
 
-        // Controller center
-        double gx = pos.getX() + 0.5;
-        double gz = pos.getZ() + 0.5;
+        waterSide1.clear(); waterSide2.clear();
+        heatSide1.clear();  heatSide2.clear();
 
-        // Side 1 (NEG)
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dy = -radius; dy <= radius; dy++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    if (dx == 0 && dy == 0 && dz == 0) continue;
+                    BlockPos p = pos.add(dx, dy, dz);
+                    BlockEntity be = world.getBlockEntity(p);
+                    boolean isNeg = (normalAxis == Direction.Axis.Z) ? (dx < 0) : (dz < 0);
+
+                    if (be instanceof WaterStreamBlockEntity) {
+                        if (isNeg) waterSide1.add(p); else waterSide2.add(p);
+                    } else if (be instanceof HeatCoilBlockEntity) {
+                        if (isNeg) heatSide1.add(p); else heatSide2.add(p);
+                    }
+                }
+            }
+        }
+
+        KarmaGateMod.LOGGER.info("[GateCtrl @{}] bound effects: water(S1={}, S2={}), heat(S1={}, S2={})",
+                controllerBE.getPos(), waterSide1.size(), waterSide2.size(), heatSide1.size(), heatSide2.size());
+    }
+
+    public void resetOnBind() {
+        prepare1 = prepare2 = 0;
+        washTicks = 0;
+        cooldownTicks = 0;
+        lampBlink = 0;
+        outerAnimWait = innerAnimWait = 0;
+        entrySide = null;
+        mode = Mode.MiddleClosed;
+        lightsSide1.allOff(controllerBE.getWorld());
+        lightsSide2.allOff(controllerBE.getWorld());
+        controllerBE.setOpen(false);
+        stopAllWater(controllerBE.getWorld());
+        stopAllHeat(controllerBE.getWorld());
+    }
+
+    /* ===================== Tick ===================== */
+
+    public void tick(World world, BlockPos pos, BlockState state) {
+        if (world == null || world.isClient) return;
+        lampBlink++;
+
+        // orientation
+        Direction.Axis gateAxis   = state.get(KarmaGateBlock.AXIS);
+        Direction.Axis normalAxis = (gateAxis == Direction.Axis.X) ? Direction.Axis.Z : Direction.Axis.X;
+
+        // centers
+        double gx = pos.getX() + 0.5, gz = pos.getZ() + 0.5;
+
+        // side squares
         double a1cx = gx, a1cz = gz;
         if (normalAxis == Direction.Axis.Z) a1cx = gx + OFFSET_NEG; else a1cz = gz + OFFSET_NEG;
-
-        // Side 2 (POS)
         double a2cx = gx, a2cz = gz;
         if (normalAxis == Direction.Axis.Z) a2cx = gx + OFFSET_POS; else a2cz = gz + OFFSET_POS;
 
-        boolean inArea1 = KarmaGateBlockEntity.anyPlayerInSquare(world, a1cx, a1cz, HALF_SIDE);
-        boolean inArea2 = KarmaGateBlockEntity.anyPlayerInSquare(world, a2cx, a2cz, HALF_SIDE);
+        boolean inSide1  = KarmaGateBlockEntity.anyPlayerInSquare(world, a1cx, a1cz, HALF_SIDE);
+        boolean inSide2  = KarmaGateBlockEntity.anyPlayerInSquare(world, a2cx, a2cz, HALF_SIDE);
+        boolean inCenter = KarmaGateBlockEntity.anyPlayerInSquare(world, gx, gz, HALF_SIDE - 2.0);
 
-        // Global cooldown: while active, block prepares/cycles; lights off
+        /* cooldown gates all */
         if (cooldownTicks > 0) {
             cooldownTicks--;
-            prepare1 = prepare2 = 0;
-            washTicks = 0;
-            if (controllerBE.isOpen()) controllerBE.setOpen(false);
             lightsSide1.allOff(world);
             lightsSide2.allOff(world);
-            return;
-        }
-
-        // Pending reset delay (controller is closed; reopen the outer gate after short pause). Lights off.
-        // Pending reset delay (controller is closed; reopen the outer gate after short pause)
-        if (pendingResetSide != CycleSide.NONE) {
-            if (controllerBE.isOpen()) controllerBE.setOpen(false);
-
-            // NEW: while resetting, blink all lights on both sides together (10 on / 10 off)
-            lightsSide1.blinkAll(world, lampBlink);
-            lightsSide2.blinkAll(world, lampBlink);
-
-            if (resetDelayTicks > 0) {
-                resetDelayTicks--;
-                return;
+            controllerBE.setOpen(false);
+            if (cooldownTicks == 0 && mode == Mode.Closed) {
+                mode = Mode.MiddleClosed;
+                KarmaGateMod.LOGGER.info("[GateCtrl @{}] cooldown done → MiddleClosed", controllerBE.getPos());
             }
-            reopenOuterGate(world, pendingResetSide);
-            pendingResetSide = CycleSide.NONE;
-            cooldownTicks = COOLDOWN_TICKS_MC;
             return;
         }
 
-
-        switch (cycleSide) {
-            case NONE -> {
-                // If both sides occupied, do nothing and lights off
-                if (inArea1 && inArea2) {
-                    prepare1 = 0;
-                    prepare2 = 0;
-                    washTicks = 0;
-                    if (controllerBE.isOpen()) controllerBE.setOpen(false);
+        switch (mode) {
+            case MiddleClosed -> {
+                // ignore if both sides occupied or someone idling in center
+                if ((inSide1 && inSide2) || inCenter) {
+                    prepare1 = prepare2 = 0;
                     lightsSide1.allOff(world);
                     lightsSide2.allOff(world);
+                    controllerBE.setOpen(false);
                     break;
                 }
 
-                // Count prepare time per side
-                prepare1 = inArea1 ? Math.min(prepare1 + 1, PREPARE_TICKS_MC) : 0;
-                prepare2 = inArea2 ? Math.min(prepare2 + 1, PREPARE_TICKS_MC) : 0;
+                // prepare gating
+                prepare1 = inSide1 && !inSide2 ? Math.min(prepare1 + 1, PREPARE_TICKS_MC) : 0;
+                prepare2 = inSide2 && !inSide1 ? Math.min(prepare2 + 1, PREPARE_TICKS_MC) : 0;
 
-                // Visual prep feedback: alternate blink bottom/top on the active side
                 if (prepare1 > 0 && prepare2 == 0) {
-                    lightsSide1.blinkBottomTopAlternate(world, lampBlink); // SIDE1 preparing
+                    lightsSide1.blinkBottomTopAlternate(world, lampBlink);
                     lightsSide2.allOff(world);
                 } else if (prepare2 > 0 && prepare1 == 0) {
-                    lightsSide2.blinkBottomTopAlternate(world, lampBlink); // SIDE2 preparing
+                    lightsSide2.blinkBottomTopAlternate(world, lampBlink);
                     lightsSide1.allOff(world);
                 } else {
                     lightsSide1.allOff(world);
@@ -177,174 +209,223 @@ public final class KarmaGateController {
                 }
 
                 if (prepare1 >= PREPARE_TICKS_MC) {
-                    startClosingSideGate(world, CycleSide.SIDE1);
+                    entrySide = Side.SIDE1;
+                    setOuterOpen(world, entrySide, false);
+                    outerAnimWait = GATE_ANIMATION_CLOSE_TICKS;
+                    controllerBE.setOpen(false);
+                    washTicks = 0;
+                    lightsSide1.allOff(world); lightsSide2.allOff(world);
+                    mode = Mode.ClosingAirLock;
+                    setWaterFlowForSide(world, opposite(entrySide), 1.0f);
+                    setHeatEnabledForSide(world, entrySide, true);
+                    KarmaGateMod.LOGGER.info("[GateCtrl @{}] PREP S1 → ClosingAirLock", controllerBE.getPos());
                 } else if (prepare2 >= PREPARE_TICKS_MC) {
-                    startClosingSideGate(world, CycleSide.SIDE2);
-                } else {
-                    if (controllerBE.isOpen()) controllerBE.setOpen(false);
+                    entrySide = Side.SIDE2;
+                    setOuterOpen(world, entrySide, false);
+                    outerAnimWait = GATE_ANIMATION_CLOSE_TICKS;
+                    controllerBE.setOpen(false);
+                    washTicks = 0;
+                    lightsSide1.allOff(world); lightsSide2.allOff(world);
+                    mode = Mode.ClosingAirLock;
+                    setWaterFlowForSide(world, opposite(entrySide), 1.0f);
+                setHeatEnabledForSide(world, entrySide, true);
+                    KarmaGateMod.LOGGER.info("[GateCtrl @{}] PREP S2 → ClosingAirLock", controllerBE.getPos());
                 }
             }
 
-            case SIDE1 -> {
-                // lock out opposite side
-                prepare2 = 0;
+            case ClosingAirLock -> {
+                if (outerAnimWait > 0) { outerAnimWait--; break; }
+                // Opposite-side water ON, entry-side heat ON
+                
 
-                // wash phase before opening controller – lights off
-                if (!controllerBE.isOpen()) {
-                    washTicks++;
-                    lightsSide1.allOff(world);
-                    lightsSide2.allOff(world);
-                    if (washTicks > WASH_TICKS_MC) {
-                        controllerBE.setOpen(true);
-                    }
-                } else {
-                    // MiddleOpen analogue: clockwise circular sequence S1B → S2B → S2T → S1T
-                    chaseCircularWaitSequence(world);
-                }
-
-                // end cycle when side 1 area empty
-                if (!inArea1) endCycle(CycleSide.SIDE1);
+                mode = Mode.Waiting;
+                KarmaGateMod.LOGGER.info("[GateCtrl @{}] outer closed → Waiting", controllerBE.getPos());
             }
 
-            case SIDE2 -> {
-                prepare1 = 0;
+            case Waiting -> {
+                lightsSide1.allOff(world); lightsSide2.allOff(world);
 
-                if (!controllerBE.isOpen()) {
-                    washTicks++;
-                    lightsSide1.allOff(world);
-                    lightsSide2.allOff(world);
-                    if (washTicks > WASH_TICKS_MC) {
-                        controllerBE.setOpen(true);
-                    }
-                } else {
-                    // MiddleOpen analogue: clockwise circular sequence S1B → S2B → S2T → S1T
-                    chaseCircularWaitSequence(world);
+                // Stop water on entry side, start on opposite side (if not already)
+                setWaterFlowForSide(world, entrySide, 1.0f);
+                setWaterFlowForSide(world, opposite(entrySide), 0.0f);
+
+                washTicks++;
+                if (washTicks >= WASH_TICKS_MC) {
+                    controllerBE.setOpen(true);                 // open middle
+                    innerAnimWait = GATE_ANIMATION_OPEN_TICKS;  // wait for anim
+                    mode = Mode.OpeningMiddle;
+
+                    // Turn off opposite water, turn off entry heat
+                    setWaterFlowForSide(world, entrySide, 0.0f);
+                    setHeatEnabledForSide(world, entrySide, false);
+
+                    KarmaGateMod.LOGGER.info("[GateCtrl @{}] Waiting done → OpeningMiddle", controllerBE.getPos());
                 }
+            }
 
-                if (!inArea2) endCycle(CycleSide.SIDE2);
+            case OpeningMiddle -> {
+                if (innerAnimWait > 0) { innerAnimWait--; break; }
+                mode = Mode.MiddleOpen;
+                KarmaGateMod.LOGGER.info("[GateCtrl @{}] inner open → MiddleOpen", controllerBE.getPos());
+            }
+
+            case MiddleOpen -> {
+                // idle lights chase while inner is open
+                chaseCircularWaitSequence(world);
+
+                // leave when center is empty (and the player progressed to the opposite side)
+                boolean progressedAcross =
+                        (entrySide == Side.SIDE1 && inSide2) ||
+                        (entrySide == Side.SIDE2 && inSide1);
+
+                if (!inCenter && progressedAcross) {
+                    controllerBE.setOpen(false);                // close middle
+                    innerAnimWait = GATE_ANIMATION_CLOSE_TICKS; // wait for anim
+                    mode = Mode.ClosingMiddle;
+
+                    // Water ON on entry side while closing middle; heat ON on opposite side
+                    setWaterFlowForSide(world, entrySide, 1.0f);
+
+                    KarmaGateMod.LOGGER.info("[GateCtrl @{}] center clear → ClosingMiddle", controllerBE.getPos());
+                }
+            }
+
+            case ClosingMiddle -> {
+
+                lightsSide1.blinkAll(world, lampBlink);
+                lightsSide2.blinkAll(world, lampBlink);
+
+                if (innerAnimWait > 0) { innerAnimWait--; break; }
+
+                // Open outer on entry side
+                setOuterOpen(world, entrySide, true);
+                outerAnimWait = GATE_ANIMATION_OPEN_TICKS;
+                mode = Mode.OpeningSide;
+
+                // Stop water on entry side; stop heat on opposite side
+                setWaterFlowForSide(world, entrySide, 0.0f);
+                setHeatEnabledForSide(world, opposite(entrySide), false);
+
+                KarmaGateMod.LOGGER.info("[GateCtrl @{}] inner closed → OpeningSide ({})", controllerBE.getPos(), entrySide);
+            }
+
+            case OpeningSide -> {
+                lightsSide1.blinkAll(world, lampBlink);
+                lightsSide2.blinkAll(world, lampBlink);
+                if (outerAnimWait > 0) { outerAnimWait--; break; }
+                // once outer is open, enter cooldown
+                cooldownTicks = COOLDOWN_TICKS_MC;
+                prepare1 = prepare2 = 0;
+                washTicks = 0;
+                lightsSide1.allOff(world); lightsSide2.allOff(world);
+                mode = Mode.Closed;
+                KarmaGateMod.LOGGER.info("[GateCtrl @{}] outer open → Closed (cooldown={})", controllerBE.getPos(), COOLDOWN_TICKS_MC);
+            }
+
+            case Closed -> {
+                // cooldown handled at top
+            }
+
+            case Broken -> {
+                // intentionally inert
             }
         }
     }
 
-    /* ===================== Internals ===================== */
+    /* ===================== DRY Helpers (water/heat) ===================== */
 
-    private void startClosingSideGate(World world, CycleSide side) {
-        if (side == CycleSide.SIDE1) {
-            setGateOpen(world, gate1, false);
-            prepare1 = 0;
-            prepare2 = 0;
-            cycleSide = CycleSide.SIDE1;
-            washTicks = 0;
-            controllerBE.setOpen(false);
-            KarmaGateMod.LOGGER.info("Controller @{}: start SIDE1 cycle (close gate1, wash {} ticks)", controllerBE.getPos(), WASH_TICKS_MC);
-        } else {
-            setGateOpen(world, gate2, false);
-            prepare1 = 0;
-            prepare2 = 0;
-            cycleSide = CycleSide.SIDE2;
-            washTicks = 0;
-            controllerBE.setOpen(false);
-            KarmaGateMod.LOGGER.info("Controller @{}: start SIDE2 cycle (close gate2, wash {} ticks)", controllerBE.getPos(), WASH_TICKS_MC);
+    private List<BlockPos> getWaterList(Side side) {
+        return side == Side.SIDE1 ? waterSide1 : waterSide2;
+    }
+    private List<BlockPos> getHeatList(Side side) {
+        return side == Side.SIDE1 ? heatSide1 : heatSide2;
+    }
+    private Side opposite(Side s) { return s == Side.SIDE1 ? Side.SIDE2 : Side.SIDE1; }
+
+    /** Set water flow for all streams on a side; also sync the ENABLED state based on flow. */
+    private void setWaterFlowForSide(World world, Side side, float flow) {
+        setWaterFlow(world, getWaterList(side), flow);
+    }
+    private void setWaterFlow(World world, List<BlockPos> list, float flow) {
+        boolean enable = flow > 0.02f;
+        for (BlockPos p : list) {
+            BlockState s = world.getBlockState(p);
+            if (s.getBlock() instanceof WaterStreamBlock) {
+                boolean cur = s.get(WaterStreamBlock.ENABLED);
+                if (cur != enable) {
+                    world.setBlockState(p, s.with(WaterStreamBlock.ENABLED, enable), 3);
+                }
+            }
+            BlockEntity be = world.getBlockEntity(p);
+            if (be instanceof WaterStreamBlockEntity ws) {
+                ws.setFlow(flow);
+            }
         }
     }
-
-    private void endCycle(CycleSide side) {
-        // Close controller, schedule outer reopen after reset delay
-        controllerBE.setOpen(false);
-
-        cycleSide = CycleSide.NONE;
-        washTicks = 0;
-        prepare1 = 0;
-        prepare2 = 0;
-
-        // Lights off as we enter reset delay
-        World w = controllerBE.getWorld();
-        if (w != null) {
-            lightsSide1.allOff(w);
-            lightsSide2.allOff(w);
-        }
-
-        pendingResetSide = side;
-        resetDelayTicks = RESET_DELAY_TICKS_MC;
-
-        if (side == CycleSide.SIDE1) {
-            KarmaGateMod.LOGGER.info("Controller @{}: SIDE1 clear -> closing middle; wait {} ticks then open gate1",
-                    controllerBE.getPos(), RESET_DELAY_TICKS_MC);
-        } else {
-            KarmaGateMod.LOGGER.info("Controller @{}: SIDE2 clear -> closing middle; wait {} ticks then open gate2",
-                    controllerBE.getPos(), RESET_DELAY_TICKS_MC);
-        }
-        // cooldown starts in tick() after delay
+    /** Enable/disable all heat coils on a side. */
+    private void setHeatEnabledForSide(World world, Side side, boolean enabled) {
+        enableHeat(world, getHeatList(side), enabled);
     }
-
-    private void reopenOuterGate(World world, CycleSide side) {
-        if (side == CycleSide.SIDE1) {
-            setGateOpen(world, gate1, true);
-            KarmaGateMod.LOGGER.info("Controller @{}: reset delay done -> gate1 opened; cooldown {} ticks",
-                    controllerBE.getPos(), COOLDOWN_TICKS_MC);
-        } else if (side == CycleSide.SIDE2) {
-            setGateOpen(world, gate2, true);
-            KarmaGateMod.LOGGER.info("Controller @{}: reset delay done -> gate2 opened; cooldown {} ticks",
-                    controllerBE.getPos(), COOLDOWN_TICKS_MC);
+    private void enableHeat(World world, List<BlockPos> list, boolean enabled) {
+        for (BlockPos p : list) {
+            BlockEntity be = world.getBlockEntity(p);
+            if (be instanceof HeatCoilBlockEntity coil) {
+                coil.setEnabled(enabled);
+            }
         }
     }
+    private void stopAllWater(World world) {
+        setWaterFlow(world, waterSide1, 0.0f);
+        setWaterFlow(world, waterSide2, 0.0f);
+    }
+    private void stopAllHeat(World world) {
+        enableHeat(world, heatSide1, false);
+        enableHeat(world, heatSide2, false);
+    }
 
-    private void setGateOpen(World world, BlockPos pos, boolean open) {
+    /* ===================== Gate helpers ===================== */
+
+    private void setOuterOpen(World world, Side side, boolean open) {
+        BlockPos pos = (side == Side.SIDE1) ? gate1 : gate2;
         if (world == null || pos == null) return;
         BlockEntity be = world.getBlockEntity(pos);
         if (be instanceof KarmaGateBlockEntity g) g.setOpen(open);
     }
 
-    // ---------------- lights: clockwise circular sequence while middle is open ----------------
-
-    /**
-     * Runs the S1B → S2B → S2T → S1T chase, advancing every 10 ticks.
-     * If not all positions exist, gracefully degrades to whatever is present.
-     * If fewer than 2 lamps exist total, both sides blinkAll as a fallback.
-     */
     private void chaseCircularWaitSequence(World world) {
-        // If we don’t have at least any two lamps total, fall back to blinking all.
-        int total =
-                lightsSide1.getRefs().size() +
-                lightsSide2.getRefs().size();
+        int total = lightsSide1.getRefs().size() + lightsSide2.getRefs().size();
         if (total < 2) {
             lightsSide1.blinkAll(world, lampBlink);
             lightsSide2.blinkAll(world, lampBlink);
             return;
         }
-
-        // Four steps per cycle
         int step = (lampBlink / CIRCULAR_STEP_TICKS) % 4;
-
-        // Turn both sides off first
         lightsSide1.allOff(world);
         lightsSide2.allOff(world);
 
-        // Determine direction of travel: SIDE1 -> SIDE2 is clockwise, SIDE2 -> SIDE1 is counterclockwise
-        boolean clockwise = (cycleSide == CycleSide.SIDE1);
-
+        boolean clockwise = (entrySide == Side.SIDE1);
         if (clockwise) {
             switch (step) {
-                case 0 -> lightsSide1.lightBottomPairOnly(world); // S1 bottom pair
-                case 1 -> lightsSide2.lightBottomPairOnly(world); // S2 bottom pair
-                case 2 -> lightsSide2.lightTopPairOnly(world);    // S2 top pair
-                case 3 -> lightsSide1.lightTopPairOnly(world);    // S1 top pair
+                case 0 -> lightsSide1.lightBottomPairOnly(world);
+                case 1 -> lightsSide2.lightBottomPairOnly(world);
+                case 2 -> lightsSide2.lightTopPairOnly(world);
+                case 3 -> lightsSide1.lightTopPairOnly(world);
             }
-        } else if (cycleSide == CycleSide.SIDE2) {
+        } else if (entrySide == Side.SIDE2) {
             switch (step) {
-                case 0 -> lightsSide2.lightBottomPairOnly(world); // S2 bottom pair
-                case 1 -> lightsSide1.lightBottomPairOnly(world); // S1 bottom pair
-                case 2 -> lightsSide1.lightTopPairOnly(world);    // S1 top pair
-                case 3 -> lightsSide2.lightTopPairOnly(world);    // S2 top pair
+                case 0 -> lightsSide2.lightBottomPairOnly(world);
+                case 1 -> lightsSide1.lightBottomPairOnly(world);
+                case 2 -> lightsSide1.lightTopPairOnly(world);
+                case 3 -> lightsSide2.lightTopPairOnly(world);
             }
         }
     }
 
-    private void setLamp(World world, BlockPos pos, boolean on) {
-        if (!(world instanceof net.minecraft.server.world.ServerWorld sw)) return;
-        BlockEntity be = sw.getBlockEntity(pos);
-        if (be instanceof GateLightBlockEntity lamp) lamp.setLit(on);
-    }
+    /* ===================== Accessors for your effect logic ===================== */
+    public List<BlockPos> getWaterSide1() { return waterSide1; }
+    public List<BlockPos> getWaterSide2() { return waterSide2; }
+    public List<BlockPos> getHeatSide1()  { return heatSide1;  }
+    public List<BlockPos> getHeatSide2()  { return heatSide2;  }
 
     /* ===================== NBT ===================== */
 
@@ -371,39 +452,86 @@ public final class KarmaGateController {
         nbt.putInt("washTicks", washTicks);
         nbt.putInt("cooldownTicks", cooldownTicks);
         nbt.putInt("lampBlink", lampBlink);
-        nbt.putString("cycleSide", cycleSide.name());
-        nbt.putString("pendingResetSide", pendingResetSide.name());
-        nbt.putInt("resetDelayTicks", resetDelayTicks);
+        nbt.putInt("outerAnimWait", outerAnimWait);
+        nbt.putInt("innerAnimWait", innerAnimWait);
 
-        // Save connected gate lights
+        nbt.putString("mode", mode.name());
+        nbt.putString("entrySide", entrySide == null ? "null" : entrySide.name());
+
+        // lights
         lightsSide1.writeNbt(nbt, "lightsSide1");
         lightsSide2.writeNbt(nbt, "lightsSide2");
+
+        // effect lists
+        writePosList(nbt, "waterSide1", waterSide1);
+        writePosList(nbt, "waterSide2", waterSide2);
+        writePosList(nbt, "heatSide1",  heatSide1);
+        writePosList(nbt, "heatSide2",  heatSide2);
     }
 
     public void readNbt(NbtCompound nbt) {
-    gate1 = nbt.contains("gate1") ? new BlockPos(
-        nbt.getCompound("gate1").getInt("x"),
-        nbt.getCompound("gate1").getInt("y"),
-        nbt.getCompound("gate1").getInt("z")) : null;
+        gate1 = nbt.contains("gate1") ? new BlockPos(
+                nbt.getCompound("gate1").getInt("x"),
+                nbt.getCompound("gate1").getInt("y"),
+                nbt.getCompound("gate1").getInt("z")) : null;
 
-    gate2 = nbt.contains("gate2") ? new BlockPos(
-        nbt.getCompound("gate2").getInt("x"),
-        nbt.getCompound("gate2").getInt("y"),
-        nbt.getCompound("gate2").getInt("z")) : null;
+        gate2 = nbt.contains("gate2") ? new BlockPos(
+                nbt.getCompound("gate2").getInt("x"),
+                nbt.getCompound("gate2").getInt("y"),
+                nbt.getCompound("gate2").getInt("z")) : null;
 
-    prepare1 = nbt.getInt("prepare1");
-    prepare2 = nbt.getInt("prepare2");
-    washTicks = nbt.getInt("washTicks");
-    cooldownTicks = nbt.getInt("cooldownTicks");
-    lampBlink = nbt.getInt("lampBlink");
-    try { cycleSide = CycleSide.valueOf(nbt.getString("cycleSide")); }
-    catch (IllegalArgumentException e) { cycleSide = CycleSide.NONE; }
-    try { pendingResetSide = CycleSide.valueOf(nbt.getString("pendingResetSide")); }
-    catch (IllegalArgumentException e) { pendingResetSide = CycleSide.NONE; }
-    resetDelayTicks = nbt.getInt("resetDelayTicks");
+        prepare1 = nbt.getInt("prepare1");
+        prepare2 = nbt.getInt("prepare2");
+        washTicks = nbt.getInt("washTicks");
+        cooldownTicks = nbt.getInt("cooldownTicks");
+        lampBlink = nbt.getInt("lampBlink");
+        outerAnimWait = nbt.getInt("outerAnimWait");
+        innerAnimWait = nbt.getInt("innerAnimWait");
 
-    // Load connected gate lights
-    lightsSide1.readNbt(nbt, "lightsSide1");
-    lightsSide2.readNbt(nbt, "lightsSide2");
+        try { mode = Mode.valueOf(nbt.getString("mode")); }
+        catch (IllegalArgumentException e) { mode = Mode.MiddleClosed; }
+
+        String es = nbt.getString("entrySide");
+        if (es == null || es.isEmpty() || "null".equals(es)) entrySide = null;
+        else {
+            try { entrySide = Side.valueOf(es); } catch (IllegalArgumentException e) { entrySide = null; }
+        }
+
+        lightsSide1.readNbt(nbt, "lightsSide1");
+        lightsSide2.readNbt(nbt, "lightsSide2");
+
+        waterSide1.clear(); waterSide2.clear();
+        heatSide1.clear();  heatSide2.clear();
+        readPosList(nbt, "waterSide1", waterSide1);
+        readPosList(nbt, "waterSide2", waterSide2);
+        readPosList(nbt, "heatSide1",  heatSide1);
+        readPosList(nbt, "heatSide2",  heatSide2);
+
+        KarmaGateMod.LOGGER.info("[GateCtrl @{}] readNbt: mode={}, entrySide={}, effects w(S1={},S2={}) h(S1={},S2={})",
+                controllerBE.getPos(), mode, entrySide, waterSide1.size(), waterSide2.size(), heatSide1.size(), heatSide2.size());
+    }
+
+    /* ===================== Small NBT helpers ===================== */
+    private static void writePosList(NbtCompound root, String key, List<BlockPos> list) {
+        NbtCompound bag = new NbtCompound();
+        bag.putInt("n", list.size());
+        for (int i = 0; i < list.size(); i++) {
+            BlockPos p = list.get(i);
+            NbtCompound e = new NbtCompound();
+            e.putInt("x", p.getX());
+            e.putInt("y", p.getY());
+            e.putInt("z", p.getZ());
+            bag.put("p" + i, e);
+        }
+        root.put(key, bag);
+    }
+    private static void readPosList(NbtCompound root, String key, List<BlockPos> out) {
+        if (!root.contains(key)) return;
+        NbtCompound bag = root.getCompound(key);
+        int n = bag.getInt("n");
+        for (int i = 0; i < n; i++) {
+            NbtCompound e = bag.getCompound("p" + i);
+            out.add(new BlockPos(e.getInt("x"), e.getInt("y"), e.getInt("z")));
+        }
     }
 }

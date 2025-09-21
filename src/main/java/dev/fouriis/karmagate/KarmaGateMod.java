@@ -2,7 +2,8 @@ package dev.fouriis.karmagate;
 
 import dev.fouriis.karmagate.block.ModBlocks;
 import dev.fouriis.karmagate.entity.ModBlockEntities;
-
+import dev.fouriis.karmagate.particle.ModParticles;
+import dev.fouriis.karmagate.sound.ModSounds;
 import net.fabricmc.api.ModInitializer;
 
 import org.slf4j.Logger;
@@ -17,6 +18,8 @@ public class KarmaGateMod implements ModInitializer {
         // Register mod content
         ModBlocks.registerModBlocks();
         ModBlockEntities.registerBlockEntities();
+        ModParticles.register();
+        ModSounds.registerModSounds();
 
         LOGGER.info("Hello Fabric world!");
     }
