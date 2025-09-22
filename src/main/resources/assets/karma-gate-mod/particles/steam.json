@@ -1,5 +1,20 @@
 {
   "textures": [
-    "karma-gate-mod:steam"
+    "karma-gate-mod:explosion_0",
+    "karma-gate-mod:explosion_1",
+    "karma-gate-mod:explosion_2",
+    "karma-gate-mod:explosion_3",
+    "karma-gate-mod:explosion_4",
+    "karma-gate-mod:explosion_5",
+    "karma-gate-mod:explosion_6",
+    "karma-gate-mod:explosion_7",
+    "karma-gate-mod:explosion_8",
+    "karma-gate-mod:explosion_9",
+    "karma-gate-mod:explosion_10",
+    "karma-gate-mod:explosion_11",
+    "karma-gate-mod:explosion_12",
+    "karma-gate-mod:explosion_13",
+    "karma-gate-mod:explosion_14",
+    "karma-gate-mod:explosion_15"
   ]
 }

@@ -13,6 +13,7 @@ import net.minecraft.particle.SimpleParticleType;
 @Environment(EnvType.CLIENT)
 public class SteamParticle extends SpriteBillboardParticle {
     private float intensity; // 0..1
+    private final SpriteProvider spriteProvider;
 
     protected SteamParticle(ClientWorld world, double x, double y, double z,
                             double vx, double vyAsIntensity, double vz,
@@ -38,6 +39,9 @@ public class SteamParticle extends SpriteBillboardParticle {
         this.scale = 0.2f + 0.6f * this.intensity; // bigger when hotter
         this.maxAge = 18 + (int)(18 * this.intensity); // lives a bit longer when hotter
         this.collidesWithWorld = false;
+
+        this.spriteProvider = sprites;
+        this.setSpriteForAge(sprites);
     }
 
     @Override
@@ -54,6 +58,8 @@ public class SteamParticle extends SpriteBillboardParticle {
 
         if (this.alpha < 0.03f) {
             this.markDead();
+        } else {
+            this.setSpriteForAge(this.spriteProvider);
         }
     }
 
