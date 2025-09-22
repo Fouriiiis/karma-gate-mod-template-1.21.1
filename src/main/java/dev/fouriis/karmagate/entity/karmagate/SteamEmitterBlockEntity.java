@@ -16,7 +16,7 @@ import java.util.Random;
 
 public class SteamEmitterBlockEntity extends BlockEntity {
     private boolean enabled = false;
-    private float intensity = 0.6f; // base
+    private float intensity = 0.9f; // base
     private final Random rng = new Random();
 
     public SteamEmitterBlockEntity(BlockPos pos, BlockState state) {

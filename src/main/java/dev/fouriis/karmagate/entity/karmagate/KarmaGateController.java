@@ -206,12 +206,16 @@ public final class KarmaGateController {
                 if (prepare1 > 0 && prepare2 == 0) {
                     lightsSide1.blinkBottomTopAlternate(world, lampBlink);
                     lightsSide2.allOff(world);
+                    setWaterFlowForSide(world, opposite(Side.SIDE1), 1.0f);
                 } else if (prepare2 > 0 && prepare1 == 0) {
                     lightsSide2.blinkBottomTopAlternate(world, lampBlink);
                     lightsSide1.allOff(world);
+                    setWaterFlowForSide(world, opposite(Side.SIDE2), 1.0f);
                 } else {
                     lightsSide1.allOff(world);
                     lightsSide2.allOff(world);
+                    //stop all water
+                    stopAllWater(world);
                 }
 
                 if (prepare1 >= PREPARE_TICKS_MC) {
@@ -265,6 +269,7 @@ public final class KarmaGateController {
 
                     // Turn off opposite water, turn off entry heat
                     setWaterFlowForSide(world, entrySide, 0.0f);
+                    setWaterFlowForSide(world, opposite(entrySide), 1.0f);
                     setHeatEnabledForSide(world, entrySide, false);
                     setSteamEnabledForSide(world, entrySide, false);
 
@@ -275,6 +280,7 @@ public final class KarmaGateController {
             case OpeningMiddle -> {
                 if (innerAnimWait > 0) { innerAnimWait--; break; }
                 mode = Mode.MiddleOpen;
+                setWaterFlowForSide(world, opposite(entrySide), 0.0f);
                 KarmaGateMod.LOGGER.info("[GateCtrl @{}] inner open → MiddleOpen", controllerBE.getPos());
             }
 
@@ -312,7 +318,7 @@ public final class KarmaGateController {
                 mode = Mode.OpeningSide;
 
                 // Stop water on entry side; stop heat on opposite side
-                setWaterFlowForSide(world, entrySide, 0.0f);
+                
                 setHeatEnabledForSide(world, opposite(entrySide), false);
 
                 KarmaGateMod.LOGGER.info("[GateCtrl @{}] inner closed → OpeningSide ({})", controllerBE.getPos(), entrySide);
@@ -328,6 +334,7 @@ public final class KarmaGateController {
                 washTicks = 0;
                 lightsSide1.allOff(world); lightsSide2.allOff(world);
                 mode = Mode.Closed;
+                setWaterFlowForSide(world, entrySide, 0.0f);
                 KarmaGateMod.LOGGER.info("[GateCtrl @{}] outer open → Closed (cooldown={})", controllerBE.getPos(), COOLDOWN_TICKS_MC);
             }
 
