@@ -3,6 +3,7 @@ package dev.fouriis.karmagate.block;
 import dev.fouriis.karmagate.KarmaGateMod;
 import dev.fouriis.karmagate.block.karmagate.KarmaGateBlock;
 import dev.fouriis.karmagate.block.karmagate.KarmaGatePartBlock;
+import dev.fouriis.karmagate.block.karmagate.SteamEmitterBlock;
 import dev.fouriis.karmagate.block.karmagate.WaterStreamBlock;
 import dev.fouriis.karmagate.block.karmagate.GateLightBlock;
 import dev.fouriis.karmagate.block.karmagate.HeatCoilBlock;
@@ -42,6 +43,11 @@ public class ModBlocks {
             .strength(3.0f)
             .sounds(BlockSoundGroup.METAL)
             .nonOpaque()));
+    public static final Block STEAM_EMITTER = registerBlock("steam_emitter",
+        new SteamEmitterBlock(Block.Settings.create()
+            .strength(3.0f)
+            .sounds(BlockSoundGroup.METAL)
+            .nonOpaque()));
 
     public static final Block KARMA_GATE_PART = Registry.register(
             Registries.BLOCK,
@@ -68,6 +74,7 @@ public class ModBlocks {
             entries.add(GATE_LIGHT);
             entries.add(HEAT_COIL);
             entries.add(WATER_STREAM);
+            entries.add(STEAM_EMITTER);
         });
     }
 }

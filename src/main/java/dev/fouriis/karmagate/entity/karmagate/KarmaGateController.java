@@ -2,6 +2,7 @@ package dev.fouriis.karmagate.entity.karmagate;
 
 import dev.fouriis.karmagate.KarmaGateMod;
 import dev.fouriis.karmagate.block.karmagate.KarmaGateBlock;
+import dev.fouriis.karmagate.block.karmagate.SteamEmitterBlock;
 import dev.fouriis.karmagate.block.karmagate.WaterStreamBlock;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.entity.BlockEntity;
@@ -57,6 +58,8 @@ public final class KarmaGateController {
     private final List<BlockPos> waterSide2 = new ArrayList<>();
     private final List<BlockPos> heatSide1  = new ArrayList<>();
     private final List<BlockPos> heatSide2  = new ArrayList<>();
+    private final List<BlockPos> steamSide1  = new ArrayList<>();
+    private final List<BlockPos> steamSide2  = new ArrayList<>();
 
     /* ===================== Runtime ===================== */
     private int prepare1 = 0;
@@ -109,7 +112,7 @@ public final class KarmaGateController {
 
         waterSide1.clear(); waterSide2.clear();
         heatSide1.clear();  heatSide2.clear();
-
+        steamSide1.clear(); steamSide2.clear();
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dy = -radius; dy <= radius; dy++) {
                 for (int dz = -radius; dz <= radius; dz++) {
@@ -122,13 +125,15 @@ public final class KarmaGateController {
                         if (isNeg) waterSide1.add(p); else waterSide2.add(p);
                     } else if (be instanceof HeatCoilBlockEntity) {
                         if (isNeg) heatSide1.add(p); else heatSide2.add(p);
+                    } else if (be instanceof SteamEmitterBlockEntity) {
+                        if (isNeg) steamSide1.add(p); else steamSide2.add(p);
                     }
                 }
             }
         }
 
-        KarmaGateMod.LOGGER.info("[GateCtrl @{}] bound effects: water(S1={}, S2={}), heat(S1={}, S2={})",
-                controllerBE.getPos(), waterSide1.size(), waterSide2.size(), heatSide1.size(), heatSide2.size());
+        KarmaGateMod.LOGGER.info("[GateCtrl @{}] bound effects: water(S1={}, S2={}), heat(S1={}, S2={}), steam(S1={}, S2={})",
+                controllerBE.getPos(), waterSide1.size(), waterSide2.size(), heatSide1.size(), heatSide2.size(), steamSide1.size(), steamSide2.size());
     }
 
     public void resetOnBind() {
@@ -144,6 +149,7 @@ public final class KarmaGateController {
         controllerBE.setOpen(false);
         stopAllWater(controllerBE.getWorld());
         stopAllHeat(controllerBE.getWorld());
+        stopAllSteam(controllerBE.getWorld());
     }
 
     /* ===================== Tick ===================== */
@@ -200,12 +206,16 @@ public final class KarmaGateController {
                 if (prepare1 > 0 && prepare2 == 0) {
                     lightsSide1.blinkBottomTopAlternate(world, lampBlink);
                     lightsSide2.allOff(world);
+                    setWaterFlowForSide(world, opposite(Side.SIDE1), 1.0f);
                 } else if (prepare2 > 0 && prepare1 == 0) {
                     lightsSide2.blinkBottomTopAlternate(world, lampBlink);
                     lightsSide1.allOff(world);
+                    setWaterFlowForSide(world, opposite(Side.SIDE2), 1.0f);
                 } else {
                     lightsSide1.allOff(world);
                     lightsSide2.allOff(world);
+                    //stop all water
+                    stopAllWater(world);
                 }
 
                 if (prepare1 >= PREPARE_TICKS_MC) {
@@ -239,6 +249,9 @@ public final class KarmaGateController {
                 
 
                 mode = Mode.Waiting;
+                setWaterFlowForSide(world, entrySide, 1.0f);
+                setWaterFlowForSide(world, opposite(entrySide), 0.0f);
+                setSteamEnabledForSide(world, entrySide, true);
                 KarmaGateMod.LOGGER.info("[GateCtrl @{}] outer closed → Waiting", controllerBE.getPos());
             }
 
@@ -246,8 +259,7 @@ public final class KarmaGateController {
                 lightsSide1.allOff(world); lightsSide2.allOff(world);
 
                 // Stop water on entry side, start on opposite side (if not already)
-                setWaterFlowForSide(world, entrySide, 1.0f);
-                setWaterFlowForSide(world, opposite(entrySide), 0.0f);
+                
 
                 washTicks++;
                 if (washTicks >= WASH_TICKS_MC) {
@@ -257,7 +269,9 @@ public final class KarmaGateController {
 
                     // Turn off opposite water, turn off entry heat
                     setWaterFlowForSide(world, entrySide, 0.0f);
+                    setWaterFlowForSide(world, opposite(entrySide), 1.0f);
                     setHeatEnabledForSide(world, entrySide, false);
+                    setSteamEnabledForSide(world, entrySide, false);
 
                     KarmaGateMod.LOGGER.info("[GateCtrl @{}] Waiting done → OpeningMiddle", controllerBE.getPos());
                 }
@@ -266,6 +280,7 @@ public final class KarmaGateController {
             case OpeningMiddle -> {
                 if (innerAnimWait > 0) { innerAnimWait--; break; }
                 mode = Mode.MiddleOpen;
+                setWaterFlowForSide(world, opposite(entrySide), 0.0f);
                 KarmaGateMod.LOGGER.info("[GateCtrl @{}] inner open → MiddleOpen", controllerBE.getPos());
             }
 
@@ -303,7 +318,7 @@ public final class KarmaGateController {
                 mode = Mode.OpeningSide;
 
                 // Stop water on entry side; stop heat on opposite side
-                setWaterFlowForSide(world, entrySide, 0.0f);
+                
                 setHeatEnabledForSide(world, opposite(entrySide), false);
 
                 KarmaGateMod.LOGGER.info("[GateCtrl @{}] inner closed → OpeningSide ({})", controllerBE.getPos(), entrySide);
@@ -319,6 +334,7 @@ public final class KarmaGateController {
                 washTicks = 0;
                 lightsSide1.allOff(world); lightsSide2.allOff(world);
                 mode = Mode.Closed;
+                setWaterFlowForSide(world, entrySide, 0.0f);
                 KarmaGateMod.LOGGER.info("[GateCtrl @{}] outer open → Closed (cooldown={})", controllerBE.getPos(), COOLDOWN_TICKS_MC);
             }
 
@@ -339,6 +355,9 @@ public final class KarmaGateController {
     }
     private List<BlockPos> getHeatList(Side side) {
         return side == Side.SIDE1 ? heatSide1 : heatSide2;
+    }
+    private List<BlockPos> getSteamList(Side side) {
+        return side == Side.SIDE1 ? steamSide1 : steamSide2;
     }
     private Side opposite(Side s) { return s == Side.SIDE1 ? Side.SIDE2 : Side.SIDE1; }
 
@@ -366,11 +385,31 @@ public final class KarmaGateController {
     private void setHeatEnabledForSide(World world, Side side, boolean enabled) {
         enableHeat(world, getHeatList(side), enabled);
     }
+    private void setSteamEnabledForSide(World world, Side side, boolean enabled) {
+        enableSteam(world, getSteamList(side), enabled);
+    }
     private void enableHeat(World world, List<BlockPos> list, boolean enabled) {
         for (BlockPos p : list) {
             BlockEntity be = world.getBlockEntity(p);
             if (be instanceof HeatCoilBlockEntity coil) {
                 coil.setEnabled(enabled);
+            }
+        }
+    }
+    /** Enable/disable all steam emitters on a side. */
+    private void enableSteam(World world, List<BlockPos> list, boolean enabled) {
+        for (BlockPos p : list) {
+            BlockEntity be = world.getBlockEntity(p);
+            if (be instanceof SteamEmitterBlockEntity emitter) {
+                emitter.setEnabled(enabled);
+                // Also mirror ENABLED into blockstate so client-side ticks run particles/sound
+                BlockState s = world.getBlockState(p);
+                if (s.getBlock() instanceof SteamEmitterBlock) {
+                    boolean cur = s.get(SteamEmitterBlock.ENABLED);
+                    if (cur != enabled) {
+                        world.setBlockState(p, s.with(SteamEmitterBlock.ENABLED, enabled), 3);
+                    }
+                }
             }
         }
     }
@@ -381,6 +420,10 @@ public final class KarmaGateController {
     private void stopAllHeat(World world) {
         enableHeat(world, heatSide1, false);
         enableHeat(world, heatSide2, false);
+    }
+    private void stopAllSteam(World world) {
+        enableSteam(world, steamSide1, false);
+        enableSteam(world, steamSide2, false);
     }
 
     /* ===================== Gate helpers ===================== */
@@ -467,6 +510,8 @@ public final class KarmaGateController {
         writePosList(nbt, "waterSide2", waterSide2);
         writePosList(nbt, "heatSide1",  heatSide1);
         writePosList(nbt, "heatSide2",  heatSide2);
+        writePosList(nbt, "steamSide1", steamSide1);
+        writePosList(nbt, "steamSide2", steamSide2);
     }
 
     public void readNbt(NbtCompound nbt) {
@@ -506,9 +551,11 @@ public final class KarmaGateController {
         readPosList(nbt, "waterSide2", waterSide2);
         readPosList(nbt, "heatSide1",  heatSide1);
         readPosList(nbt, "heatSide2",  heatSide2);
+        readPosList(nbt, "steamSide1", steamSide1);
+        readPosList(nbt, "steamSide2", steamSide2);
 
-        KarmaGateMod.LOGGER.info("[GateCtrl @{}] readNbt: mode={}, entrySide={}, effects w(S1={},S2={}) h(S1={},S2={})",
-                controllerBE.getPos(), mode, entrySide, waterSide1.size(), waterSide2.size(), heatSide1.size(), heatSide2.size());
+        KarmaGateMod.LOGGER.info("[GateCtrl @{}] readNbt: mode={}, entrySide={}, effects w(S1={},S2={}) h(S1={},S2={}) s(S1={},S2={})",
+                controllerBE.getPos(), mode, entrySide, waterSide1.size(), waterSide2.size(), heatSide1.size(), heatSide2.size(), steamSide1.size(), steamSide2.size());
     }
 
     /* ===================== Small NBT helpers ===================== */
