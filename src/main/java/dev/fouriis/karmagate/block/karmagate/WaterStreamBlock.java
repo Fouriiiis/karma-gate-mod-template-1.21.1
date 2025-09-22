@@ -3,10 +3,12 @@ package dev.fouriis.karmagate.block.karmagate;
 import com.mojang.serialization.MapCodec;
 
 import dev.fouriis.karmagate.entity.ModBlockEntities;
+import dev.fouriis.karmagate.entity.karmagate.WaterStreamBlockEntity;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockRenderType;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.BlockWithEntity;
+import net.minecraft.block.ShapeContext;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.block.entity.BlockEntityTicker;
 import net.minecraft.block.entity.BlockEntityType;
@@ -19,6 +21,7 @@ import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.shape.VoxelShape;
 import net.minecraft.util.shape.VoxelShapes;
+import net.minecraft.world.BlockView;
 import net.minecraft.world.World;
 
 public class WaterStreamBlock extends BlockWithEntity {
@@ -43,12 +46,12 @@ public class WaterStreamBlock extends BlockWithEntity {
     }
 
     @Override
-    public VoxelShape getCollisionShape(BlockState state, net.minecraft.world.BlockView world, BlockPos pos, net.minecraft.block.ShapeContext context) {
+    public VoxelShape getCollisionShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
         return VoxelShapes.fullCube();
     }
 
     @Override
-    public VoxelShape getOutlineShape(BlockState state, net.minecraft.world.BlockView world, BlockPos pos, net.minecraft.block.ShapeContext context) {
+    public VoxelShape getOutlineShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
         return VoxelShapes.fullCube();
     }
 
@@ -76,7 +79,7 @@ public class WaterStreamBlock extends BlockWithEntity {
     public <T extends BlockEntity> BlockEntityTicker<T> getTicker(
             World world, BlockState state, BlockEntityType<T> type) {
         return type == ModBlockEntities.WATER_STREAM_BLOCK_ENTITY
-                ? (w, p, s, be) -> dev.fouriis.karmagate.entity.karmagate.WaterStreamBlockEntity.tick(w, p, s, (dev.fouriis.karmagate.entity.karmagate.WaterStreamBlockEntity) be)
+                ? (w, p, s, be) -> WaterStreamBlockEntity.tick(w, p, s, (WaterStreamBlockEntity) be)
                 : null;
     }
 }

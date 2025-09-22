@@ -1,0 +1,81 @@
+// dev/fouriis/karmagate/entity/SteamEmitterBlockEntity.java
+package dev.fouriis.karmagate.entity.karmagate;
+
+import dev.fouriis.karmagate.entity.ModBlockEntities;
+import dev.fouriis.karmagate.particle.ModParticles;
+import dev.fouriis.karmagate.sound.ModSounds;
+import dev.fouriis.karmagate.block.karmagate.SteamEmitterBlock;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.entity.BlockEntity;
+import net.minecraft.nbt.NbtCompound;
+import net.minecraft.registry.RegistryWrapper;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.World;
+
+import java.util.Random;
+
+public class SteamEmitterBlockEntity extends BlockEntity {
+    private boolean enabled = false;
+    private float intensity = 0.6f; // base
+    private final Random rng = new Random();
+
+    public SteamEmitterBlockEntity(BlockPos pos, BlockState state) {
+        super(ModBlockEntities.STEAM_EMITTER_BLOCK_ENTITY, pos, state);
+    }
+
+    public boolean isEnabled() { return enabled; }
+    public void setEnabled(boolean enabled) {
+        System.out.println("SteamEmitterBlockEntity: setEnabled " + enabled);
+        if (this.enabled != enabled) {
+            this.enabled = enabled;
+            markDirty();
+            if (world != null) world.updateListeners(pos, getCachedState(), getCachedState(), 3);
+        }
+    }
+
+    public static void tick(World world, BlockPos pos, BlockState state, SteamEmitterBlockEntity be) {
+    // Use synced block state property so client sees the toggle without BE sync
+    if (!state.get(SteamEmitterBlock.ENABLED)) return;
+
+    // CLIENT: spawn steam & drive loop volume
+    if (world.isClient) {
+            // vary intensity a bit so the loop breathes
+            float jitter = (float)(be.rng.nextGaussian() * 0.08);
+            float inten = Math.max(0f, Math.min(1f, be.intensity + jitter));
+
+            // spawn a few steam puffs per tick
+            int puffs = 1 + be.rng.nextInt(2);
+            for (int i = 0; i < puffs; i++) {
+                double ox = pos.getX() + 0.5 + (be.rng.nextDouble() - 0.5) * 0.2;
+                double oy = pos.getY() + 0.6 + be.rng.nextDouble() * 0.2;
+                double oz = pos.getZ() + 0.5 + (be.rng.nextDouble() - 0.5) * 0.2;
+                world.addParticle(ModParticles.STEAM, ox, oy, oz, 0, inten, 0); // vy carries intensity
+            }
+
+            // tell the audio controller to run/boost the emitter loop here
+            ModSounds.onSteamBurst(pos, inten, ModSounds.STEAM_LOOP_2_EVENT);
+        }
+    }
+
+    @Override
+    protected void writeNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup lookup) {
+        super.writeNbt(nbt, lookup);
+        nbt.putBoolean("enabled", enabled);
+        nbt.putFloat("intensity", intensity);
+    }
+
+    @Override
+    public void readNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup lookup) {
+        super.readNbt(nbt, lookup);
+        enabled = nbt.getBoolean("enabled");
+        intensity = nbt.contains("intensity") ? nbt.getFloat("intensity") : 0.6f;
+    }
+
+    @Override
+    public NbtCompound toInitialChunkDataNbt(RegistryWrapper.WrapperLookup lookup) {
+        NbtCompound nbt = super.toInitialChunkDataNbt(lookup);
+        nbt.putBoolean("enabled", enabled);
+        nbt.putFloat("intensity", intensity);
+        return nbt;
+    }
+}
