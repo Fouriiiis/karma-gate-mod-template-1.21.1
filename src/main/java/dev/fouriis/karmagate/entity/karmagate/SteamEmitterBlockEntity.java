@@ -46,9 +46,10 @@ public class SteamEmitterBlockEntity extends BlockEntity {
             // spawn a few steam puffs per tick
             int puffs = 1 + be.rng.nextInt(2);
             for (int i = 0; i < puffs; i++) {
-                double ox = pos.getX() + 0.5 + (be.rng.nextDouble() - 0.5) * 0.2;
+                // Spawn anywhere within the block's X/Z bounds (inclusive of lower edge, exclusive of upper), never outside
+                double ox = pos.getX() + be.rng.nextDouble();
                 double oy = pos.getY() + 0.6 + be.rng.nextDouble() * 0.2;
-                double oz = pos.getZ() + 0.5 + (be.rng.nextDouble() - 0.5) * 0.2;
+                double oz = pos.getZ() + be.rng.nextDouble();
                 world.addParticle(ModParticles.STEAM, ox, oy, oz, 0, inten, 0); // vy carries intensity
             }
 
