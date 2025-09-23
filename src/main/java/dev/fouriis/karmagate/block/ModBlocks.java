@@ -54,6 +54,12 @@ public class ModBlocks {
             Identifier.of(KarmaGateMod.MOD_ID, "karma_gate_part"),
             new KarmaGatePartBlock(Block.Settings.create().strength(-1.0F, 3600000.0F).dropsNothing().nonOpaque().suffocates((state, world, pos) -> false))
     );
+
+    public static final Block HOLOGRAM_PROJECTOR = registerBlock("hologram_projector",
+        new dev.fouriis.karmagate.block.hologram.HologramProjectorBlock(Block.Settings.create()
+            .strength(3.0f)
+            .sounds(BlockSoundGroup.METAL)
+            .nonOpaque()));
     
 
     private static Block registerBlock(String name, Block block) {
@@ -65,6 +71,9 @@ public class ModBlocks {
         return Registry.register(Registries.ITEM, Identifier.of(KarmaGateMod.MOD_ID, name),
                 new BlockItem(block, new Item.Settings()));
     }
+    
+
+
 
     public static void registerModBlocks() {
         KarmaGateMod.LOGGER.info("Registering ModBlocks for " + KarmaGateMod.MOD_ID);
@@ -75,6 +84,7 @@ public class ModBlocks {
             entries.add(HEAT_COIL);
             entries.add(WATER_STREAM);
             entries.add(STEAM_EMITTER);
+            entries.add(HOLOGRAM_PROJECTOR);
         });
     }
 }

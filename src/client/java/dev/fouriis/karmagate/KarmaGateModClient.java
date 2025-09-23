@@ -4,6 +4,7 @@ import dev.fouriis.karmagate.entity.ModBlockEntities;
 import dev.fouriis.karmagate.entity.client.GateLightBlockRenderer;
 import dev.fouriis.karmagate.entity.client.HeatCoilRenderer;
 import dev.fouriis.karmagate.entity.client.KarmaGateBlockRenderer;
+import dev.fouriis.karmagate.hologram.HologramProjectorRenderer;
 import dev.fouriis.karmagate.particle.ModParticles;
 import dev.fouriis.karmagate.particle.SteamParticle;
 import dev.fouriis.karmagate.particle.WaterStreamParticle;
@@ -24,6 +25,7 @@ public class KarmaGateModClient implements ClientModInitializer {
 		BlockEntityRendererFactories.register(ModBlockEntities.KARMA_GATE_BLOCK_ENTITY, KarmaGateBlockRenderer::new);
 		BlockEntityRendererFactories.register(ModBlockEntities.GATE_LIGHT_BLOCK_ENTITY, GateLightBlockRenderer::new);
 		BlockEntityRendererFactories.register(ModBlockEntities.HEAT_COIL_BLOCK_ENTITY, HeatCoilRenderer::new);
+		BlockEntityRendererFactories.register(ModBlockEntities.HOLOGRAM_PROJECTOR, HologramProjectorRenderer::new);
 
 		ParticleFactoryRegistry.getInstance().register(ModParticles.WATER_STREAM, sprites -> new WaterStreamParticle.Factory(sprites));
 		ParticleFactoryRegistry.getInstance().register(ModParticles.STEAM, sprites -> new SteamParticle.Factory(sprites));

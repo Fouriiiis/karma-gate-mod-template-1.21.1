@@ -5,6 +5,7 @@ import dev.fouriis.karmagate.block.ModBlocks;
 import dev.fouriis.karmagate.block.karmagate.KarmaGatePartBlock;
 import dev.fouriis.karmagate.entity.karmagate.KarmaGateBlockEntity;
 import dev.fouriis.karmagate.entity.karmagate.WaterStreamBlockEntity;
+import dev.fouriis.karmagate.entity.hologram.HologramProjectorBlockEntity;
 import dev.fouriis.karmagate.entity.karmagate.GateLightBlockEntity;
 import dev.fouriis.karmagate.entity.karmagate.HeatCoilBlockEntity;
 import dev.fouriis.karmagate.entity.karmagate.SteamEmitterBlockEntity;
@@ -42,7 +43,11 @@ public class ModBlockEntities {
     public static final BlockEntityType<SteamEmitterBlockEntity> STEAM_EMITTER_BLOCK_ENTITY =
         Registry.register(Registries.BLOCK_ENTITY_TYPE, Identifier.of(KarmaGateMod.MOD_ID, "steam_emitter_block_entity"),
             FabricBlockEntityTypeBuilder.create(SteamEmitterBlockEntity::new, ModBlocks.STEAM_EMITTER).build());
-    
+
+    public static final BlockEntityType<HologramProjectorBlockEntity> HOLOGRAM_PROJECTOR =
+        Registry.register(Registries.BLOCK_ENTITY_TYPE, Identifier.of(KarmaGateMod.MOD_ID, "hologram_projector"),
+            FabricBlockEntityTypeBuilder.create(HologramProjectorBlockEntity::new, ModBlocks.HOLOGRAM_PROJECTOR).build());
+
     public static void registerBlockEntities() {
         KarmaGateMod.LOGGER.info("Registering Block Entities for " + KarmaGateMod.MOD_ID);
     }

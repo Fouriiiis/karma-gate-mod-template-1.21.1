@@ -19,7 +19,8 @@
 			"dev.fouriis.karmagate.KarmaGateMod"
 		],
 		"client": [
-			"dev.fouriis.karmagate.KarmaGateModClient"
+			"dev.fouriis.karmagate.KarmaGateModClient",
+			"dev.fouriis.karmagate.client.hologram.HologramShaders"
 		]
 	},
 	"mixins": [
