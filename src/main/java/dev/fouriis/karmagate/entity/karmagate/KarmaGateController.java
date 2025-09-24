@@ -73,7 +73,9 @@ public final class KarmaGateController {
 
         /** Helper for symbol index mapping: 0..5 => levels, 6 => LEVEL_D (clamped otherwise). */
         public static KarmaLevel fromIndex(int idx) {
-            if (idx == 6) return LEVEL_D;
+            // Support both legacy 6 sentinel AND direct -1 input for LEVEL_D so callers can
+            // naturally cycle -1..5 without remapping.
+            if (idx == -1 || idx == 6) return LEVEL_D;
             int k = Math.max(0, Math.min(5, idx));
             return switch (k) {
                 case 0 -> LEVEL_0;

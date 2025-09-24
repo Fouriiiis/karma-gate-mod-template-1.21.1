@@ -18,7 +18,7 @@ import net.minecraft.util.math.BlockPos;
 public class HologramProjectorBlockEntity extends BlockEntity {
     // server-authoritative selected symbol (0..5 plus D mapped to 6)
     // 0..5 => gateSymbol0.png..gateSymbol5.png, 6 => gateSymbolD.png
-    private int symbolIdx = 1;
+    private int symbolIdx = 0;
     // derived key used by the client renderer (computed from karma/symbol)
     private String symbolKey = keyFor(KarmaLevel.LEVEL_0);
 
