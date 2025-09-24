@@ -1,5 +1,8 @@
 {
   "variants": {
-    "": { "model": "minecraft:block/air" }
+    "facing=north": { "model": "karma-gate-mod:block/hologram_projector", "y": 180 },
+    "facing=south": { "model": "karma-gate-mod:block/hologram_projector", "y": 0 },
+    "facing=west":  { "model": "karma-gate-mod:block/hologram_projector", "y": 90 },
+    "facing=east":  { "model": "karma-gate-mod:block/hologram_projector", "y": 270 }
   }
 }

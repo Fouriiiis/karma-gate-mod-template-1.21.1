@@ -1,6 +1,7 @@
 {
   "parent": "minecraft:block/cube_all",
   "textures": {
-    "all": "karma-gate-mod:block/gate_light"
+    "all": "karma-gate-mod:block/gate_light",
+    "lit": "karma-gate-mod:block/gate_light_lit"
   }
 }

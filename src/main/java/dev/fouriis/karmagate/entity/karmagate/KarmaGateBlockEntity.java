@@ -258,4 +258,8 @@ public class KarmaGateBlockEntity extends BlockEntity implements GeoBlockEntity 
         }
         return false;
     }
+
+    public KarmaGateController getController() {
+        return controller;
+    }
 }

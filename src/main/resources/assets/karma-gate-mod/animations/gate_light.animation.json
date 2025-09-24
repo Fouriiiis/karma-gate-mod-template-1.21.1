@@ -3,6 +3,7 @@
 	"animations": {
 		"on": {
 			"loop": true,
+			"animation_length": 1,
 			"bones": {
 				"off": {
 					"position": {

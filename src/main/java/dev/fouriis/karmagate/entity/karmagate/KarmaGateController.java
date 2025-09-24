@@ -1,9 +1,11 @@
+// dev/fouriis/karmagate/entity/karmagate/KarmaGateController.java
 package dev.fouriis.karmagate.entity.karmagate;
 
 import dev.fouriis.karmagate.KarmaGateMod;
 import dev.fouriis.karmagate.block.karmagate.KarmaGateBlock;
 import dev.fouriis.karmagate.block.karmagate.SteamEmitterBlock;
 import dev.fouriis.karmagate.block.karmagate.WaterStreamBlock;
+import dev.fouriis.karmagate.entity.hologram.HologramProjectorBlockEntity;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.nbt.NbtCompound;
@@ -16,7 +18,7 @@ import java.util.List;
 
 /**
  * Airlock controller simplified into RW-like Mode states.
- * Binds lights + effect blocks (water/heat). Effect usage is implemented with DRY helpers.
+ * Binds lights + effect blocks (water/heat/steam) and holograms.
  */
 public final class KarmaGateController {
 
@@ -34,6 +36,57 @@ public final class KarmaGateController {
     }
     private enum Side { SIDE1, SIDE2 }
 
+    // Enum for karma levels 0-5 + D
+    public enum KarmaLevel {
+        LEVEL_0(0),
+        LEVEL_1(1),
+        LEVEL_2(2),
+        LEVEL_3(3),
+        LEVEL_4(4),
+        LEVEL_5(5),
+        LEVEL_D(-1);
+
+        private final int index;
+
+        KarmaLevel(int index) { this.index = index; }
+
+        public int getIndex() { return index; }
+
+        /** Representative normalized (0..1) value; LEVEL_D maps to 1.0f for now (treat like special high). */
+        public float asFloat() { return index < 0 ? 1.0f : (index / 5.0f); }
+
+        /** Map a normalized float (0..1) to the nearest discrete karma tier (exclusive of LEVEL_D). */
+        public static KarmaLevel fromFloat(float v) {
+            float c = Math.max(0f, Math.min(1f, v));
+            int bucket = (int)Math.floor(c * 6f); // 0..5 (since c==1 gives 6 -> clamp to 5)
+            if (bucket > 5) bucket = 5;
+            return switch (bucket) {
+                case 0 -> LEVEL_0;
+                case 1 -> LEVEL_1;
+                case 2 -> LEVEL_2;
+                case 3 -> LEVEL_3;
+                case 4 -> LEVEL_4;
+                case 5 -> LEVEL_5;
+                default -> LEVEL_0;
+            };
+        }
+
+        /** Helper for symbol index mapping: 0..5 => levels, 6 => LEVEL_D (clamped otherwise). */
+        public static KarmaLevel fromIndex(int idx) {
+            if (idx == 6) return LEVEL_D;
+            int k = Math.max(0, Math.min(5, idx));
+            return switch (k) {
+                case 0 -> LEVEL_0;
+                case 1 -> LEVEL_1;
+                case 2 -> LEVEL_2;
+                case 3 -> LEVEL_3;
+                case 4 -> LEVEL_4;
+                case 5 -> LEVEL_5;
+                default -> LEVEL_0;
+            };
+        }
+    }
+
     /* ===================== Geometry ===================== */
     private static final double HALF_SIDE  = 6.5;
     private static final double OFFSET_POS = 5.0;   // Side 2 (+) along controller normal
@@ -42,7 +95,7 @@ public final class KarmaGateController {
     /* ===================== Timings (20 TPS) ===================== */
     private static final int PREPARE_TICKS_MC          = 60;
     private static final int WASH_TICKS_MC             = 100;
-    private static final int COOLDOWN_TICKS_MC         = 500;
+    private static final int COOLDOWN_TICKS_MC         = 600;
 
     private static final int GATE_ANIMATION_OPEN_TICKS  = 160;
     private static final int GATE_ANIMATION_CLOSE_TICKS = 160;
@@ -58,8 +111,10 @@ public final class KarmaGateController {
     private final List<BlockPos> waterSide2 = new ArrayList<>();
     private final List<BlockPos> heatSide1  = new ArrayList<>();
     private final List<BlockPos> heatSide2  = new ArrayList<>();
-    private final List<BlockPos> steamSide1  = new ArrayList<>();
-    private final List<BlockPos> steamSide2  = new ArrayList<>();
+    private final List<BlockPos> steamSide1 = new ArrayList<>();
+    private final List<BlockPos> steamSide2 = new ArrayList<>();
+    private final List<BlockPos> hologramSide1 = new ArrayList<>();
+    private final List<BlockPos> hologramSide2 = new ArrayList<>();
 
     /* ===================== Runtime ===================== */
     private int prepare1 = 0;
@@ -78,6 +133,10 @@ public final class KarmaGateController {
     /* ===================== Lights ===================== */
     private final GateLightGroup lightsSide1 = new GateLightGroup(GateLightGroup.Side.SIDE1);
     private final GateLightGroup lightsSide2 = new GateLightGroup(GateLightGroup.Side.SIDE2);
+
+    /* ===================== Shared Karma Levels ===================== */
+    private KarmaLevel karmaSide1 = KarmaLevel.LEVEL_0;
+    private KarmaLevel karmaSide2 = KarmaLevel.LEVEL_0;
 
     /* ===================== Parent BE ===================== */
     private final KarmaGateBlockEntity controllerBE;
@@ -103,7 +162,7 @@ public final class KarmaGateController {
         lightsSide2.allOff(world);
     }
 
-    /** Bind lights and scan + bind nearby WaterStream/HeatCoil BEs split by side. */
+    /** Bind lights and scan + bind nearby WaterStream/HeatCoil/Steam/Hologram BEs split by side. */
     public void bindLightsAndEffects(World world, BlockPos pos, BlockState state, int radius) {
         bindLights(world, pos, state, radius);
 
@@ -113,6 +172,8 @@ public final class KarmaGateController {
         waterSide1.clear(); waterSide2.clear();
         heatSide1.clear();  heatSide2.clear();
         steamSide1.clear(); steamSide2.clear();
+        hologramSide1.clear(); hologramSide2.clear();
+
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dy = -radius; dy <= radius; dy++) {
                 for (int dz = -radius; dz <= radius; dz++) {
@@ -127,13 +188,20 @@ public final class KarmaGateController {
                         if (isNeg) heatSide1.add(p); else heatSide2.add(p);
                     } else if (be instanceof SteamEmitterBlockEntity) {
                         if (isNeg) steamSide1.add(p); else steamSide2.add(p);
+                    } else if (be instanceof HologramProjectorBlockEntity) {
+                        if (isNeg) hologramSide1.add(p); else hologramSide2.add(p);
+                        ((HologramProjectorBlockEntity)be).bindController(this);
                     }
                 }
             }
         }
 
-        KarmaGateMod.LOGGER.info("[GateCtrl @{}] bound effects: water(S1={}, S2={}), heat(S1={}, S2={}), steam(S1={}, S2={})",
-                controllerBE.getPos(), waterSide1.size(), waterSide2.size(), heatSide1.size(), heatSide2.size(), steamSide1.size(), steamSide2.size());
+        // Apply current shared karma levels to all found holograms
+        applyKarmaToList(world, hologramSide1, karmaSide1);
+        applyKarmaToList(world, hologramSide2, karmaSide2);
+
+        KarmaGateMod.LOGGER.info("[GateCtrl @{}] bound effects: water(S1={}, S2={}), heat(S1={}, S2={}), steam(S1={}, S2={}), holo(S1={}, S2={})",
+                controllerBE.getPos(), waterSide1.size(), waterSide2.size(), heatSide1.size(), heatSide2.size(), steamSide1.size(), steamSide2.size(), hologramSide1.size(), hologramSide2.size());
     }
 
     public void resetOnBind() {
@@ -150,6 +218,9 @@ public final class KarmaGateController {
         stopAllWater(controllerBE.getWorld());
         stopAllHeat(controllerBE.getWorld());
         stopAllSteam(controllerBE.getWorld());
+        //reset holograms
+        setHologramLowPower(controllerBE.getWorld(), false, false);
+        setHologramTargetLevels(controllerBE.getWorld(), 0.0f, 0.0f);
     }
 
     /* ===================== Tick ===================== */
@@ -183,6 +254,8 @@ public final class KarmaGateController {
             controllerBE.setOpen(false);
             if (cooldownTicks == 0 && mode == Mode.Closed) {
                 mode = Mode.MiddleClosed;
+                setHologramTargetLevels(world, 0.0f, 0.0f);
+                setHologramLowPower(world, false, false);
                 KarmaGateMod.LOGGER.info("[GateCtrl @{}] cooldown done → MiddleClosed", controllerBE.getPos());
             }
             return;
@@ -206,16 +279,21 @@ public final class KarmaGateController {
                 if (prepare1 > 0 && prepare2 == 0) {
                     lightsSide1.blinkBottomTopAlternate(world, lampBlink);
                     lightsSide2.allOff(world);
+                    setHologramTargetLevelSide2(world, 1.0f);
                     setWaterFlowForSide(world, opposite(Side.SIDE1), 1.0f);
                 } else if (prepare2 > 0 && prepare1 == 0) {
                     lightsSide2.blinkBottomTopAlternate(world, lampBlink);
                     lightsSide1.allOff(world);
+                    setHologramTargetLevelSide1(world, 1.0f);
                     setWaterFlowForSide(world, opposite(Side.SIDE2), 1.0f);
                 } else {
                     lightsSide1.allOff(world);
                     lightsSide2.allOff(world);
-                    //stop all water
+                    // stop all water
                     stopAllWater(world);
+                    // reset hologram targets
+                    setHologramTargetLevels(world, 0.0f, 0.0f);
+                    setHologramLowPower(world, false, false);
                 }
 
                 if (prepare1 >= PREPARE_TICKS_MC) {
@@ -228,6 +306,7 @@ public final class KarmaGateController {
                     mode = Mode.ClosingAirLock;
                     setWaterFlowForSide(world, opposite(entrySide), 1.0f);
                     setHeatEnabledForSide(world, entrySide, true);
+                    setHologramTargetLevelSide1(world, 1.0f);
                     KarmaGateMod.LOGGER.info("[GateCtrl @{}] PREP S1 → ClosingAirLock", controllerBE.getPos());
                 } else if (prepare2 >= PREPARE_TICKS_MC) {
                     entrySide = Side.SIDE2;
@@ -238,15 +317,14 @@ public final class KarmaGateController {
                     lightsSide1.allOff(world); lightsSide2.allOff(world);
                     mode = Mode.ClosingAirLock;
                     setWaterFlowForSide(world, opposite(entrySide), 1.0f);
-                setHeatEnabledForSide(world, entrySide, true);
+                    setHeatEnabledForSide(world, entrySide, true);
+                    setHologramTargetLevelSide2(world, 1.0f);
                     KarmaGateMod.LOGGER.info("[GateCtrl @{}] PREP S2 → ClosingAirLock", controllerBE.getPos());
                 }
             }
 
             case ClosingAirLock -> {
                 if (outerAnimWait > 0) { outerAnimWait--; break; }
-                // Opposite-side water ON, entry-side heat ON
-                
 
                 mode = Mode.Waiting;
                 setWaterFlowForSide(world, entrySide, 1.0f);
@@ -257,9 +335,6 @@ public final class KarmaGateController {
 
             case Waiting -> {
                 lightsSide1.allOff(world); lightsSide2.allOff(world);
-
-                // Stop water on entry side, start on opposite side (if not already)
-                
 
                 washTicks++;
                 if (washTicks >= WASH_TICKS_MC) {
@@ -298,7 +373,7 @@ public final class KarmaGateController {
                     innerAnimWait = GATE_ANIMATION_CLOSE_TICKS; // wait for anim
                     mode = Mode.ClosingMiddle;
 
-                    // Water ON on entry side while closing middle; heat ON on opposite side
+                    // Water ON on entry side while closing middle
                     setWaterFlowForSide(world, entrySide, 1.0f);
 
                     KarmaGateMod.LOGGER.info("[GateCtrl @{}] center clear → ClosingMiddle", controllerBE.getPos());
@@ -306,7 +381,6 @@ public final class KarmaGateController {
             }
 
             case ClosingMiddle -> {
-
                 lightsSide1.blinkAll(world, lampBlink);
                 lightsSide2.blinkAll(world, lampBlink);
 
@@ -318,7 +392,7 @@ public final class KarmaGateController {
                 mode = Mode.OpeningSide;
 
                 // Stop water on entry side; stop heat on opposite side
-                
+                setWaterFlowForSide(world, entrySide, 0.0f);
                 setHeatEnabledForSide(world, opposite(entrySide), false);
 
                 KarmaGateMod.LOGGER.info("[GateCtrl @{}] inner closed → OpeningSide ({})", controllerBE.getPos(), entrySide);
@@ -335,6 +409,8 @@ public final class KarmaGateController {
                 lightsSide1.allOff(world); lightsSide2.allOff(world);
                 mode = Mode.Closed;
                 setWaterFlowForSide(world, entrySide, 0.0f);
+                setHologramTargetLevels(world, 0.20f, 0.20f);
+                setHologramLowPower(world, true, true);
                 KarmaGateMod.LOGGER.info("[GateCtrl @{}] outer open → Closed (cooldown={})", controllerBE.getPos(), COOLDOWN_TICKS_MC);
             }
 
@@ -348,7 +424,7 @@ public final class KarmaGateController {
         }
     }
 
-    /* ===================== DRY Helpers (water/heat) ===================== */
+    /* ===================== DRY Helpers (water/heat/steam) ===================== */
 
     private List<BlockPos> getWaterList(Side side) {
         return side == Side.SIDE1 ? waterSide1 : waterSide2;
@@ -381,13 +457,17 @@ public final class KarmaGateController {
             }
         }
     }
+
     /** Enable/disable all heat coils on a side. */
     private void setHeatEnabledForSide(World world, Side side, boolean enabled) {
         enableHeat(world, getHeatList(side), enabled);
     }
+
+    /** Enable/disable all steam emitters on a side. */
     private void setSteamEnabledForSide(World world, Side side, boolean enabled) {
         enableSteam(world, getSteamList(side), enabled);
     }
+
     private void enableHeat(World world, List<BlockPos> list, boolean enabled) {
         for (BlockPos p : list) {
             BlockEntity be = world.getBlockEntity(p);
@@ -396,7 +476,7 @@ public final class KarmaGateController {
             }
         }
     }
-    /** Enable/disable all steam emitters on a side. */
+
     private void enableSteam(World world, List<BlockPos> list, boolean enabled) {
         for (BlockPos p : list) {
             BlockEntity be = world.getBlockEntity(p);
@@ -413,6 +493,7 @@ public final class KarmaGateController {
             }
         }
     }
+
     private void stopAllWater(World world) {
         setWaterFlow(world, waterSide1, 0.0f);
         setWaterFlow(world, waterSide2, 0.0f);
@@ -469,6 +550,144 @@ public final class KarmaGateController {
     public List<BlockPos> getWaterSide2() { return waterSide2; }
     public List<BlockPos> getHeatSide1()  { return heatSide1;  }
     public List<BlockPos> getHeatSide2()  { return heatSide2;  }
+    public List<BlockPos> getHologramSide1() { return hologramSide1; }
+    public List<BlockPos> getHologramSide2() { return hologramSide2; }
+
+    public KarmaLevel getKarmaSide1() { return karmaSide1; }
+    public KarmaLevel getKarmaSide2() { return karmaSide2; }
+
+    // Only enum-based setters exposed now
+    public void setKarmaSide1(World world, KarmaLevel lvl) { setKarmaForSide(world, Side.SIDE1, lvl); }
+    public void setKarmaSide2(World world, KarmaLevel lvl) { setKarmaForSide(world, Side.SIDE2, lvl); }
+
+    /** Re-apply current stored karma levels to all currently bound holograms. */
+    public void reapplyKarma(World world) {
+        if (world == null) return;
+        applyKarmaToList(world, hologramSide1, karmaSide1);
+        applyKarmaToList(world, hologramSide2, karmaSide2);
+    }
+
+    /* ===================== Hologram visual helpers (targetLevel / lowPower) ===================== */
+
+    // ---- targetLevel (0..1 float) ----
+
+    /** Set target static level for all holograms on Side 1. */
+    public void setHologramTargetLevelSide1(World world, float level) { setHologramTargetLevelForSide(world, Side.SIDE1, level); }
+    /** Set target static level for all holograms on Side 2. */
+    public void setHologramTargetLevelSide2(World world, float level) { setHologramTargetLevelForSide(world, Side.SIDE2, level); }
+    /** Set target static level for both sides (null to skip a side). */
+    public void setHologramTargetLevels(World world, Float side1Level, Float side2Level) {
+        if (world == null) return;
+        if (side1Level != null) setHologramTargetLevelForSide(world, Side.SIDE1, side1Level);
+        if (side2Level != null) setHologramTargetLevelForSide(world, Side.SIDE2, side2Level);
+    }
+
+    private void setHologramTargetLevelForSide(World world, Side side, float level) {
+        if (world == null) return;
+        float clamped = Math.max(0f, Math.min(1f, level));
+        List<BlockPos> list = (side == Side.SIDE1) ? hologramSide1 : hologramSide2;
+        for (BlockPos p : list) {
+            BlockEntity be = world.getBlockEntity(p);
+            if (be instanceof HologramProjectorBlockEntity holo) {
+                holo.setTargetLevel(clamped);
+            }
+        }
+    }
+
+    // ---- lowPower toggle ----
+
+    /** Toggle lowPower mode for holograms on Side 1. */
+    public void setHologramLowPowerSide1(World world, boolean lowPower) { setHologramLowPowerForSide(world, Side.SIDE1, lowPower); }
+    /** Toggle lowPower mode for holograms on Side 2. */
+    public void setHologramLowPowerSide2(World world, boolean lowPower) { setHologramLowPowerForSide(world, Side.SIDE2, lowPower); }
+    /** Toggle lowPower mode for both sides (null to skip a side). */
+    public void setHologramLowPower(World world, Boolean side1Low, Boolean side2Low) {
+        if (world == null) return;
+        if (side1Low != null) setHologramLowPowerForSide(world, Side.SIDE1, side1Low);
+        if (side2Low != null) setHologramLowPowerForSide(world, Side.SIDE2, side2Low);
+    }
+
+    private void setHologramLowPowerForSide(World world, Side side, boolean lowPower) {
+        if (world == null) return;
+        List<BlockPos> list = (side == Side.SIDE1) ? hologramSide1 : hologramSide2;
+        for (BlockPos p : list) {
+            BlockEntity be = world.getBlockEntity(p);
+            if (be instanceof HologramProjectorBlockEntity holo) {
+                holo.setLowpower(lowPower);
+            }
+        }
+    }
+
+    /**
+     * Called by a hologram when its symbol changes.
+     * Update the required karma for its own side AND mirror to the other side so both holograms match.
+     */
+    public void setKarma(BlockPos pos, KarmaLevel lvl) {
+        World world = controllerBE.getWorld();
+        if (world == null || lvl == null) return;
+        Side side = null;
+        if (hologramSide1.contains(pos)) side = Side.SIDE1; else if (hologramSide2.contains(pos)) side = Side.SIDE2;
+
+        // Fallback classification if lists are stale (e.g., hologram placed after initial bind)
+        if (side == null) {
+            side = classifySide(pos, world);
+            // Optionally add to list so future updates are instant
+            if (side == Side.SIDE1 && !hologramSide1.contains(pos)) hologramSide1.add(pos);
+            else if (side == Side.SIDE2 && !hologramSide2.contains(pos)) hologramSide2.add(pos);
+        }
+
+        if (side != null) {
+            setKarmaForSide(world, side, lvl); // ONLY update that side now (no mirroring)
+            KarmaGateMod.LOGGER.info("[GateCtrl @{}] setKarma from hologram {} → {} (side={})", controllerBE.getPos(), pos, lvl, side);
+        } else {
+            KarmaGateMod.LOGGER.warn("[GateCtrl @{}] setKarma could not classify hologram {}", controllerBE.getPos(), pos);
+        }
+    }
+
+    /** Determine side of a hologram relative to controller using geometry if not already bound. */
+    private Side classifySide(BlockPos holoPos, World world) {
+        try {
+            BlockPos cPos = controllerBE.getPos();
+            BlockState state = world.getBlockState(cPos);
+            if (!(state.getBlock() instanceof KarmaGateBlock)) return null;
+            Direction.Axis gateAxis = state.get(KarmaGateBlock.AXIS);
+            Direction.Axis normalAxis = (gateAxis == Direction.Axis.X) ? Direction.Axis.Z : Direction.Axis.X;
+            int diff = (normalAxis == Direction.Axis.Z)
+                    ? (holoPos.getX() - cPos.getX())
+                    : (holoPos.getZ() - cPos.getZ());
+            return diff < 0 ? Side.SIDE1 : Side.SIDE2;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Sets the karma level for the specified side and updates all holograms on that side.
+     */
+    private void setKarmaForSide(World world, Side side, KarmaLevel lvl) {
+        if (lvl == null) return;
+        if (side == Side.SIDE1) {
+            if (lvl == karmaSide1) return;
+            karmaSide1 = lvl;
+            applyKarmaToList(world, hologramSide1, karmaSide1);
+        } else {
+            if (lvl == karmaSide2) return;
+            karmaSide2 = lvl;
+            applyKarmaToList(world, hologramSide2, karmaSide2);
+        }
+        controllerBE.markDirty();
+    }
+
+    private void applyKarmaToList(World world, List<BlockPos> list, KarmaLevel lvl) {
+        if (world == null) return;
+        for (BlockPos p : list) {
+            BlockEntity be = world.getBlockEntity(p);
+            if (be instanceof HologramProjectorBlockEntity holo) {
+                // This now also updates symbolIdx/symbolKey for visuals
+                holo.setKarmaLevelEnum(lvl);
+            }
+        }
+    }
 
     /* ===================== NBT ===================== */
 
@@ -512,6 +731,12 @@ public final class KarmaGateController {
         writePosList(nbt, "heatSide2",  heatSide2);
         writePosList(nbt, "steamSide1", steamSide1);
         writePosList(nbt, "steamSide2", steamSide2);
+        writePosList(nbt, "holoSide1", hologramSide1);
+        writePosList(nbt, "holoSide2", hologramSide2);
+
+        // enum names
+        nbt.putString("karmaSide1", karmaSide1.name());
+        nbt.putString("karmaSide2", karmaSide2.name());
     }
 
     public void readNbt(NbtCompound nbt) {
@@ -553,6 +778,26 @@ public final class KarmaGateController {
         readPosList(nbt, "heatSide2",  heatSide2);
         readPosList(nbt, "steamSide1", steamSide1);
         readPosList(nbt, "steamSide2", steamSide2);
+        readPosList(nbt, "holoSide1", hologramSide1);
+        readPosList(nbt, "holoSide2", hologramSide2);
+
+        // enum-or-float back-compat
+        if (nbt.contains("karmaSide1")) {
+            if (nbt.get("karmaSide1") instanceof net.minecraft.nbt.NbtString) {
+                try { karmaSide1 = KarmaLevel.valueOf(nbt.getString("karmaSide1")); }
+                catch (IllegalArgumentException e) { karmaSide1 = KarmaLevel.LEVEL_0; }
+            } else {
+                karmaSide1 = KarmaLevel.fromFloat(nbt.getFloat("karmaSide1"));
+            }
+        }
+        if (nbt.contains("karmaSide2")) {
+            if (nbt.get("karmaSide2") instanceof net.minecraft.nbt.NbtString) {
+                try { karmaSide2 = KarmaLevel.valueOf(nbt.getString("karmaSide2")); }
+                catch (IllegalArgumentException e) { karmaSide2 = KarmaLevel.LEVEL_0; }
+            } else {
+                karmaSide2 = KarmaLevel.fromFloat(nbt.getFloat("karmaSide2"));
+            }
+        }
 
         KarmaGateMod.LOGGER.info("[GateCtrl @{}] readNbt: mode={}, entrySide={}, effects w(S1={},S2={}) h(S1={},S2={}) s(S1={},S2={})",
                 controllerBE.getPos(), mode, entrySide, waterSide1.size(), waterSide2.size(), heatSide1.size(), heatSide2.size(), steamSide1.size(), steamSide2.size());
@@ -580,5 +825,10 @@ public final class KarmaGateController {
             NbtCompound e = bag.getCompound("p" + i);
             out.add(new BlockPos(e.getInt("x"), e.getInt("y"), e.getInt("z")));
         }
+    }
+
+    public BlockPos getPos() {
+        //return controllerBE.getPos();
+        return controllerBE == null ? null : controllerBE.getPos();
     }
 }
