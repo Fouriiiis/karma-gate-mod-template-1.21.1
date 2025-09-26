@@ -25,7 +25,7 @@ public class HologramProjectorBlockEntity extends BlockEntity {
     private float glow = 1f;       // 0..1
     private float flicker = 0f;    // 0..1
     private float staticLevel = 0f;// 0..1
-    private float targetLevel = 0f;// 0..1
+    private float targetLevel = 0.5f;// 0..1
 
     // Authoritative enum (no raw float/int for karma kept as state)
     private KarmaLevel karmaLevel = KarmaLevel.LEVEL_0;

@@ -20,23 +20,25 @@ public class SteamParticle extends SpriteBillboardParticle {
                             SpriteProvider sprites) {
         super(world, x, y, z, 0, 0, 0);
 
-        this.intensity = (float)Math.max(0.0, Math.min(1.0, vyAsIntensity)); // encoded in 'vy'
+    // Triple the incoming intensity (clamped), for hotter/brighter/bigger steam
+    this.intensity = (float)Math.max(0.0, Math.min(1.0, vyAsIntensity * 3.0)); // encoded in 'vy'
         this.setSprite(sprites);
 
-        // Initial motion: gentle upward drift
-        this.velocityX = (this.random.nextDouble() - 0.5) * 0.02;
-        this.velocityY = 2 * (0.03 + 0.04 * this.intensity); // rise faster when hotter
-        this.velocityZ = (this.random.nextDouble() - 0.5) * 0.02;
+    // Initial motion: much stronger outward drift and rise
+    this.velocityX = (this.random.nextDouble() - 0.5) * 0.10; // wider horizontal spread
+    this.velocityY = (float)(0.25 + 0.45 * this.intensity);   // significantly higher rise
+    this.velocityZ = (this.random.nextDouble() - 0.5) * 0.10;
 
-        // Reverse gravity (rises)
-        this.gravityStrength = -0.01f;
+    // Stronger negative gravity so steam keeps rising
+    this.gravityStrength = -0.03f;
 
         // Visuals based on intensity
         float base = 0.6f + 0.4f * this.intensity;
         this.red = this.green = this.blue = base; // whitens when hotter
         this.alpha = 0.6f + 0.35f * this.intensity;
 
-        this.scale = 0.2f + 0.6f * this.intensity; // bigger when hotter
+    // Triple the visual size
+    this.scale = (0.2f + 0.6f * this.intensity) * 3.0f; // bigger when hotter
         this.maxAge = 18 + (int)(18 * this.intensity); // lives a bit longer when hotter
         this.collidesWithWorld = false;
 
@@ -53,8 +55,8 @@ public class SteamParticle extends SpriteBillboardParticle {
         this.alpha *= 0.97f;
         this.scale *= 0.985f;
 
-        // Slow upward drift gets weaker over time
-        this.velocityY *= 0.995;
+    // Preserve more upward velocity over time (less damping)
+    this.velocityY *= 0.998;
 
         if (this.alpha < 0.03f) {
             this.markDead();

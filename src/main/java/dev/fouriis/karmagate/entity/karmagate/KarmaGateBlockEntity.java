@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.UUID;
 
 import dev.fouriis.karmagate.KarmaGateMod;
-import dev.fouriis.karmagate.block.karmagate.KarmaGateBlock;
 import dev.fouriis.karmagate.entity.ModBlockEntities;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.entity.BlockEntity;
@@ -18,8 +17,8 @@ import net.minecraft.network.packet.Packet;
 import net.minecraft.network.packet.s2c.play.BlockEntityUpdateS2CPacket;
 import net.minecraft.registry.RegistryWrapper;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
 import net.minecraft.world.World;
 import software.bernie.geckolib.animatable.GeoBlockEntity;
 import software.bernie.geckolib.animatable.instance.AnimatableInstanceCache;
@@ -30,6 +29,8 @@ import software.bernie.geckolib.animation.AnimationState;
 import software.bernie.geckolib.animation.PlayState;
 import software.bernie.geckolib.animation.RawAnimation;
 import software.bernie.geckolib.util.GeckoLibUtil;
+// Client-only sound helpers (safe to reference inside client-guarded code paths)
+import dev.fouriis.karmagate.sound.ModSounds;
 
 public class KarmaGateBlockEntity extends BlockEntity implements GeoBlockEntity {
     private static final String ANIM_OPEN       = "open";
@@ -171,6 +172,70 @@ public class KarmaGateBlockEntity extends BlockEntity implements GeoBlockEntity 
                     .then(ANIM_CLOSE, Animation.LoopType.PLAY_ONCE)
                     .then(ANIM_CLOSE_IDLE, Animation.LoopType.LOOP));
 
+        // Dispatch custom timeline events from animations (GeckoLib 'timeline' keyframes)
+        controller.setCustomInstructionKeyframeHandler(evt -> {
+            // Client-only safety: only play sounds on the client
+            if (this.world == null || !this.world.isClient) return;
+
+            try {
+                // GeckoLib passes a list of instruction strings; use reflection for API stability
+                var m = evt.getClass().getMethod("instructions");
+                Object o = m.invoke(evt);
+                if (o instanceof java.util.List<?> list) {
+                    for (Object v : list) if (v instanceof String s) dispatchTimelineEvent(s);
+                }
+            } catch (Throwable ignored) {
+                try {
+                    var m2 = evt.getClass().getMethod("getKeyframeData");
+                    Object o2 = m2.invoke(evt);
+                    if (o2 instanceof String s) dispatchTimelineEvent(s);
+                } catch (Throwable alsoIgnored) {
+                    // no-op: not critical if no events
+                }
+            }
+        });
+
+        // Handle sound keyframes from animation JSON (sound_effects)
+        controller.setSoundKeyframeHandler(evt -> {
+            if (this.world == null || !this.world.isClient) return;
+            try {
+                var data = evt.getKeyframeData();
+                if (data == null) return;
+                String soundStr = null;
+                float volume = 1.0f;
+                float pitch = 1.0f;
+
+                // Access via reflection to be resilient across GeckoLib versions
+                try {
+                    Object sObj = data.getClass().getMethod("getSound").invoke(data);
+                    if (sObj instanceof String s) soundStr = s;
+                } catch (Throwable ignored) {}
+                try {
+                    Object vObj = data.getClass().getMethod("getVolume").invoke(data);
+                    if (vObj instanceof Number n) volume = n.floatValue();
+                } catch (Throwable ignored) {}
+                try {
+                    Object pObj = data.getClass().getMethod("getPitch").invoke(data);
+                    if (pObj instanceof Number n) pitch = n.floatValue();
+                } catch (Throwable ignored) {}
+
+                if (soundStr == null || soundStr.isEmpty()) return;
+                Identifier id = Identifier.tryParse(soundStr);
+                if (id == null) return;
+                // Route to client audio implementation (lets us centralize behavior/volume/category)
+                ModSounds.onSoundKeyframe(this.pos, id, volume, pitch);
+                KarmaGateMod.LOGGER.info("[GateAudio] Played keyframe sound '{}' v={} p={} at {}", soundStr, volume, pitch, this.pos);
+            } catch (Throwable t) {
+                KarmaGateMod.LOGGER.warn("[GateAudio] Failed to handle sound keyframe: {}", t.toString());
+            }
+        });
+
+        // Handle particle keyframes (optional: currently no-op, silences warnings)
+        controller.setParticleKeyframeHandler(evt -> {
+            // You can map evt.getKeyframeData().getParticle() to your particle system here if desired
+            // For now, just acknowledge to avoid GeckoLib warnings
+        });
+
         registrar.add(controller);
     }
 
@@ -189,6 +254,15 @@ public class KarmaGateBlockEntity extends BlockEntity implements GeoBlockEntity 
     @Override
     public AnimatableInstanceCache getAnimatableInstanceCache() {
         return cache;
+    }
+
+    // Map timeline tokens to audio specs and play (client-side only)
+    private void dispatchTimelineEvent(String token) {
+        if (token == null || token.isEmpty()) return;
+        if (this.world == null || !this.world.isClient) return;
+
+        // Forward to client audio implementation
+        ModSounds.onTimelineEvent(this.pos, token);
     }
 
     /* ===================== Tick (server) ===================== */

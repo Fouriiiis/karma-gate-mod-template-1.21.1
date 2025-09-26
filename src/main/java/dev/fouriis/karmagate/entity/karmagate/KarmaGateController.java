@@ -411,7 +411,7 @@ public final class KarmaGateController {
                 lightsSide1.allOff(world); lightsSide2.allOff(world);
                 mode = Mode.Closed;
                 setWaterFlowForSide(world, entrySide, 0.0f);
-                setHologramTargetLevels(world, 0.20f, 0.20f);
+                setHologramTargetLevels(world, 0.65f, 0.65f);
                 setHologramLowPower(world, true, true);
                 KarmaGateMod.LOGGER.info("[GateCtrl @{}] outer open → Closed (cooldown={})", controllerBE.getPos(), COOLDOWN_TICKS_MC);
             }

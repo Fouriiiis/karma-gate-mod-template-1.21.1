@@ -37,16 +37,20 @@ public class WaterStreamParticle extends SpriteBillboardParticle {
         // Pick initial sprite (and keep syncing per age)
         this.setSpriteForAge(sprites);
 
-        this.velocityX = vx;
-        this.velocityY = vy;
-        this.velocityZ = vz;
+    // Increase initial velocities: make the stream move faster
+    this.velocityX = vx * 1.5;
+    this.velocityY = vy * 2.0;
+    this.velocityZ = vz * 1.5;
 
         // Fixed strip dimensions
         this.widthW  = 5f / 16f;
-        this.heightW = (40 + this.random.nextInt(21)) / 16f; // 20..40 px
+    // Triple the strip length: previously 20..40 px => now ~60..120 px
+    this.heightW = (3f * (40 + this.random.nextInt(21))) / 16f; // ~60..120 px
 
-        this.maxAge = 20 + this.random.nextInt(20);
-        this.gravityStrength = 0.06f;
+    // Triple lifetime: previously 20..39 ticks => now ~60..117 ticks
+    this.maxAge = 3 * (20 + this.random.nextInt(20));
+    // Even faster falling speed (gravity): previously 0.06 * 3 => 0.18, now 0.27
+    this.gravityStrength = 0.27f;
         this.red = 0.85f;
         this.green = 0.95f;
         this.blue = 1.0f;

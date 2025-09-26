@@ -1,12 +1,81 @@
 {
+  "caabinetdoor": {
+    "sounds": [
+      "karma-gate-mod:caabinetdoora_1",
+      "karma-gate-mod:caabinetdoora_2",
+      "karma-gate-mod:caabinetdoora_3",
+      "karma-gate-mod:caabinetdoora_4"
+    ]
+  },
+  "caabinetloop": {
+    "sounds": [
+      { "name": "karma-gate-mod:caabinetloop", "stream": true, "attenuation_distance": 32 }
+    ]
+  },
+  "chaindoorloop": {
+    "sounds": [
+      { "name": "karma-gate-mod:chaindoorloop3", "stream": true, "attenuation_distance": 32 }
+    ]
+  },
+  "deepglugloop": {
+    "sounds": [
+      { "name": "karma-gate-mod:deepglugloop", "stream": true, "attenuation_distance": 32 }
+    ]
+  },
+  "draingluga": {
+    "sounds": [
+      "karma-gate-mod:draingluga_1",
+      "karma-gate-mod:draingluga_2",
+      "karma-gate-mod:draingluga_3",
+      "karma-gate-mod:draingluga_4"
+    ]
+  },
+  "hugeimpact": { "sounds": [ { "name": "karma-gate-mod:hugeimpact", "attenuation_distance": 32 } ] },
+  "hydraimpact": { "sounds": [ { "name": "karma-gate-mod:hydraimpact", "attenuation_distance": 32 } ] },
+  "hydraulicsa": {
+    "sounds": [
+      { "name": "karma-gate-mod:hydraulicsa_1", "attenuation_distance": 32 },
+      { "name": "karma-gate-mod:hydraulicsa_2", "attenuation_distance": 32 }
+    ]
+  },
+  "largelatch": { "sounds": [ { "name": "karma-gate-mod:largelatch", "attenuation_distance": 32 } ] },
+  "machinedoors": { "sounds": [ { "name": "karma-gate-mod:machinedoors", "attenuation_distance": 32 } ] },
+  "medimpact2": { "sounds": [ { "name": "karma-gate-mod:medimpact2", "attenuation_distance": 32 } ] },
+  "metalpling": { "sounds": [ { "name": "karma-gate-mod:metalpling", "attenuation_distance": 32 } ] },
+  "metalscrapea": {
+    "sounds": [
+      { "name": "karma-gate-mod:metalscrapea_1", "attenuation_distance": 32 },
+      { "name": "karma-gate-mod:metalscrapea_2", "attenuation_distance": 32 },
+      { "name": "karma-gate-mod:metalscrapea_3", "attenuation_distance": 32 },
+      { "name": "karma-gate-mod:metalscrapea_4", "attenuation_distance": 32 }
+    ]
+  },
+  "ominousmachinea": {
+    "sounds": [
+      { "name": "karma-gate-mod:ominousmachinea_1", "attenuation_distance": 32 },
+      { "name": "karma-gate-mod:ominousmachinea_2", "attenuation_distance": 32 },
+      { "name": "karma-gate-mod:ominousmachinea_3", "attenuation_distance": 32 },
+      { "name": "karma-gate-mod:ominousmachinea_4", "attenuation_distance": 32 }
+    ]
+  },
+  "steamblasta": {
+    "sounds": [
+      "karma-gate-mod:steamblasta_1",
+      "karma-gate-mod:steamblasta_2",
+      "karma-gate-mod:steamblasta_3",
+      "karma-gate-mod:steamblasta_4",
+      "karma-gate-mod:steamblasta_5"
+    ]
+  },
   "steamloop2": {
     "subtitle": "Steam hissing",
     "sounds": [
-      {
-        "name": "karma-gate-mod:steamloop2",
-        "stream": true,
-        "attenuation_distance": 32
-      }
+      { "name": "karma-gate-mod:steamloop2", "stream": true, "attenuation_distance": 32 }
+    ]
+  },
+  "waterdrainloop": {
+    "sounds": [
+      { "name": "karma-gate-mod:waterdrainloop", "stream": true, "attenuation_distance": 32 }
     ]
   }
 }

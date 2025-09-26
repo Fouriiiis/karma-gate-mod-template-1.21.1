@@ -2434,6 +2434,19 @@
 						}
 					}
 				}
+			},
+			"sound_effects": {
+				"0.0": {
+					"effect": "soundDemo"
+				}
+			},
+			"particle_effects": {
+				"0.0": {
+					"effect": "particleDemo"
+				}
+			},
+			"timeline": {
+				"0.0": "instructionDemo;"
 			}
 		},
 		"open_idle": {
@@ -4612,6 +4625,9 @@
 				},
 				"GateArm2a2": {
 					"rotation": {
+						"0.0": {
+							"vector": [0, 0, 0]
+						},
 						"2.0417": {
 							"vector": [0, 0, 0]
 						},

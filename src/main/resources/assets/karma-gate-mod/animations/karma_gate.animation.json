@@ -2434,6 +2434,26 @@
 						}
 					}
 				}
+			},
+			"sound_effects": {
+				"0.0417": { "effect": "karma-gate-mod:metalscrapea", "volume": 1.0, "pitch": 1.0 },
+				"1.0833": { "effect": "karma-gate-mod:hydraulicsa", "volume": 1.0, "pitch": 1.0 },
+				"2.5417": { "effect": "karma-gate-mod:metalpling", "volume": 0.9, "pitch": 1.0 },
+				"7.9167": { "effect": "karma-gate-mod:ominousmachinea", "volume": 1.0, "pitch": 1.0 },
+				"8.7083": { "effect": "karma-gate-mod:hydraimpact", "volume": 1.0, "pitch": 1.0 },
+				"9.0": { "effect": "karma-gate-mod:machinedoors", "volume": 1.0, "pitch": 1.0 },
+				"11.875": { "effect": "karma-gate-mod:largelatch", "volume": 1.0, "pitch": 0.95 },
+				"12.25": { "effect": "karma-gate-mod:largelatch", "volume": 1.0, "pitch": 1.05 },
+				"12.5": { "effect": "karma-gate-mod:hugeimpact", "volume": 1.0, "pitch": 1.0 },
+				"12.625": { "effect": "karma-gate-mod:largelatch", "volume": 1.0, "pitch": 1.0 }
+			},
+			"particle_effects": {
+				"0.0": {
+					"effect": "particleDemo"
+				}
+			},
+			"timeline": {
+				"0.0": "instructionDemo;"
 			}
 		},
 		"open_idle": {
@@ -4612,6 +4632,9 @@
 				},
 				"GateArm2a2": {
 					"rotation": {
+						"0.0": {
+							"vector": [0, 0, 0]
+						},
 						"2.0417": {
 							"vector": [0, 0, 0]
 						},
@@ -4904,6 +4927,13 @@
 						}
 					}
 				}
+			},
+			"sound_effects": {
+				"5.0":   { "effect": "karma-gate-mod:hydraulicsa", "volume": 0.9, "pitch": 1.0 },
+				"5.9167": { "effect": "karma-gate-mod:hydraulicsa", "volume": 1.0, "pitch": 1.05 },
+				"6.4167": { "effect": "karma-gate-mod:machinedoors",  "volume": 1.0, "pitch": 1.0 },
+				"10.9167": { "effect": "karma-gate-mod:metalscrapea",  "volume": 0.9, "pitch": 1.0 },
+				"11.0417": { "effect": "karma-gate-mod:hugeimpact",    "volume": 1.0, "pitch": 1.0 }
 			}
 		},
 		"close_idle": {
