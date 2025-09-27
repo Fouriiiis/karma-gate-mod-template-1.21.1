@@ -131,7 +131,7 @@ public class KarmaGateBlock extends BlockWithEntity {
         if (!(be instanceof KarmaGateBlockEntity gate)) return ActionResult.PASS;
 
         if (player.isSneaking() && player.hasPermissionLevel(2)) {
-            int bound = gate.configureAsControllerAndBindNearest(15);
+            int bound = gate.configureAsControllerAndBindNearest(25);
             if (player instanceof ServerPlayerEntity serverPlayer) {
                 serverPlayer.sendMessage(
                         net.minecraft.text.Text.literal("Bound " + bound + " gate(s) as controller."), false
