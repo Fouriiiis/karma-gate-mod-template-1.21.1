@@ -54,7 +54,7 @@ public class SteamEmitterBlockEntity extends BlockEntity {
             }
 
             // tell the audio controller to run/boost the emitter loop here
-            ModSounds.onSteamBurst(pos, inten, ModSounds.STEAM_BLAST_A_EVENT);
+            ModSounds.onSteamBurst(pos, inten, ModSounds.STEAM_LOOP_2_EVENT);
         }
     }
 

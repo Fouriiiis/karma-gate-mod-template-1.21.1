@@ -29,4 +29,16 @@ public class KarmaGateBlockRenderer extends GeoBlockRenderer<KarmaGateBlockEntit
         super.render(entity, tickDelta, matrices, vertexConsumers, light, overlay);
         matrices.pop();
     }
+
+    // Never cull due to small AABB; our model and effects extend beyond the block space.
+    @Override
+    public boolean rendersOutsideBoundingBox(KarmaGateBlockEntity be) {
+        return true;
+    }
+
+    // Push culling distance far out so walking away doesn't stop rendering/animation.
+    @Override
+    public int getRenderDistance() {
+        return 1024; // blocks
+    }
 }

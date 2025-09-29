@@ -22,11 +22,11 @@ public class SteamParticle extends SpriteBillboardParticle {
 
     // Triple the incoming intensity (clamped), for hotter/brighter/bigger steam
     this.intensity = (float)Math.max(0.0, Math.min(1.0, vyAsIntensity * 3.0)); // encoded in 'vy'
-        this.setSprite(sprites);
+    this.setSprite(sprites);
 
     // Initial motion: much stronger outward drift and rise
     this.velocityX = (this.random.nextDouble() - 0.5) * 0.10; // wider horizontal spread
-    this.velocityY = (float)(0.25 + 0.45 * this.intensity);   // significantly higher rise
+    this.velocityY = (float)((0.25 + 0.45 * this.intensity) * 0.5);   // halve vertical movement
     this.velocityZ = (this.random.nextDouble() - 0.5) * 0.10;
 
     // Stronger negative gravity so steam keeps rising
