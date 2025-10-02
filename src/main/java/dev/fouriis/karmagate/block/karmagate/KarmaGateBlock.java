@@ -61,7 +61,7 @@ public class KarmaGateBlock extends BlockWithEntity {
         BlockState s = getDefaultState().with(AXIS, ctx.getHorizontalPlayerFacing().getAxis());
         World w = ctx.getWorld();
         BlockPos base = ctx.getBlockPos();
-        Direction.Axis axis = s.get(AXIS);
+        Direction.Axis axis = (s.get(AXIS) == Direction.Axis.X) ? Direction.Axis.Z : Direction.Axis.X;
 
         int halfW = (GATE_WIDTH - 1) / 2;
 

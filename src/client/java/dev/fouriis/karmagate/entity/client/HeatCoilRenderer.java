@@ -72,7 +72,8 @@ public class HeatCoilRenderer extends GeoBlockRenderer<HeatCoilBlockEntity> {
         if (w0 > 0f) {
             int a0 = (int)(Math.min(1f, baseAlpha * w0) * 255f);
             int argb0 = ColorHelper.Argb.getArgb(a0, 255, 255, 255);
-            RenderLayer layer0 = RenderLayer.getEntityTranslucentEmissive(tex.apply(i0));
+            // Use the vanilla "eyes" render layer for shader compatibility (Iris/EMF)
+            RenderLayer layer0 = RenderLayer.getEyes(tex.apply(i0));
             VertexConsumer buf0 = bufferSource.getBuffer(layer0);
             getRenderer().reRender(
                 bakedModel, matrices, bufferSource, animatable,
@@ -84,7 +85,8 @@ public class HeatCoilRenderer extends GeoBlockRenderer<HeatCoilBlockEntity> {
         if (w1 > 0f) {
             int a1 = (int)(Math.min(1f, baseAlpha * w1) * 255f);
             int argb1 = ColorHelper.Argb.getArgb(a1, 255, 255, 255);
-            RenderLayer layer1 = RenderLayer.getEntityTranslucentEmissive(tex.apply(i1));
+            // Use the vanilla "eyes" render layer for shader compatibility (Iris/EMF)
+            RenderLayer layer1 = RenderLayer.getEyes(tex.apply(i1));
             VertexConsumer buf1 = bufferSource.getBuffer(layer1);
             getRenderer().reRender(
                 bakedModel, matrices, bufferSource, animatable,
@@ -142,7 +144,8 @@ public class HeatCoilRenderer extends GeoBlockRenderer<HeatCoilBlockEntity> {
 
             // Choose a mid/hot emissive for the shimmer overlay depending on heat
             net.minecraft.util.Identifier tex = (t < 0.4f) ? HeatCoilModel.EMISSIVE_2 : (t < 0.8f ? HeatCoilModel.EMISSIVE_3 : HeatCoilModel.EMISSIVE_4);
-            RenderLayer layer = RenderLayer.getEntityTranslucentEmissive(tex);
+            // Use the vanilla "eyes" render layer for shader compatibility (Iris/EMF)
+            RenderLayer layer = RenderLayer.getEyes(tex);
             VertexConsumer vc = bufferSource.getBuffer(layer);
 
             matrices.push();

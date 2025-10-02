@@ -93,10 +93,6 @@ public final class KarmaGateController {
     private static final double HALF_SIDE  = 6.5;
     private static final double OFFSET_POS = 5.0;   // Side 2 (+) along controller normal
     private static final double OFFSET_NEG = -4.0;  // Side 1 (−) along controller normal
-    // Outer gates are 2 blocks wide along the controller's normal axis; account for this when
-    // measuring usable corridor distance (use nearest gate face instead of gate center).
-    private static final double GATE_THICKNESS_NORMAL = 2.0;  // blocks along normal axis
-    private static final double GATE_HALF_THICKNESS   = GATE_THICKNESS_NORMAL * 0.5;
 
     /* ===================== Timings (20 TPS) ===================== */
     private static final int PREPARE_TICKS_MC          = 60;
@@ -172,13 +168,17 @@ public final class KarmaGateController {
     public void bindLightsAndEffects(World world, BlockPos pos, BlockState state, int radius) {
         bindLights(world, pos, state, radius);
 
-        Direction.Axis gateAxis   = state.get(KarmaGateBlock.AXIS);
-        Direction.Axis normalAxis = (gateAxis == Direction.Axis.X) ? Direction.Axis.Z : Direction.Axis.X;
+    Direction.Axis gateAxis   = state.get(KarmaGateBlock.AXIS);
 
         waterSide1.clear(); waterSide2.clear();
         heatSide1.clear();  heatSide2.clear();
         steamSide1.clear(); steamSide2.clear();
         hologramSide1.clear(); hologramSide2.clear();
+
+    // Center of the gate along its axis: posCoord - 0.5 (gate takes 2 blocks towards -axis)
+    final double axisCenter = (gateAxis == Direction.Axis.X)
+        ? (pos.getX() - 0.5)
+        : (pos.getZ() - 0.5);
 
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dy = -radius; dy <= radius; dy++) {
@@ -186,8 +186,11 @@ public final class KarmaGateController {
                     if (dx == 0 && dy == 0 && dz == 0) continue;
                     BlockPos p = pos.add(dx, dy, dz);
                     BlockEntity be = world.getBlockEntity(p);
-                    // Classify by displacement along the NORMAL axis: X for normal=X, Z for normal=Z
-                    boolean isNeg = (normalAxis == Direction.Axis.X) ? (dx < 0) : (dz < 0);
+            // Classify by displacement along the GATE axis around the centered coordinate
+            double along = (gateAxis == Direction.Axis.X)
+                ? ((p.getX() + 0.5) - axisCenter)
+                : ((p.getZ() + 0.5) - axisCenter);
+            boolean isNeg = along < 0; // SIDE1 on negative side of the axis center
 
                     if (be instanceof WaterStreamBlockEntity) {
                         if (isNeg) waterSide1.add(p); else waterSide2.add(p);
@@ -238,67 +241,70 @@ public final class KarmaGateController {
 
         // orientation
         Direction.Axis gateAxis   = state.get(KarmaGateBlock.AXIS);
-        Direction.Axis normalAxis = (gateAxis == Direction.Axis.X) ? Direction.Axis.Z : Direction.Axis.X;
+        // Axis-centered reference along the gate axis
+        double centerX = pos.getX() + 0.5;
+        double centerZ = pos.getZ() + 0.5;
+        double axisCenter = (gateAxis == Direction.Axis.X) ? (pos.getX() - 0.5) : (pos.getZ() - 0.5);
 
-        // controller world-space center (XZ)
-        double gx = pos.getX() + 0.5, gz = pos.getZ() + 0.5;
+        // Determine gate coordinates along axis (center points)
+        Double g1 = (gate1 != null) ? ((gateAxis == Direction.Axis.X) ? (gate1.getX() + 0.5) : (gate1.getZ() + 0.5)) : null;
+        Double g2 = (gate2 != null) ? ((gateAxis == Direction.Axis.X) ? (gate2.getX() + 0.5) : (gate2.getZ() + 0.5)) : null;
 
-        // Dynamically size & place side detection squares based on distances to bound outer gates along the controller's normal axis.
-        // Compute signed distances along the normal axis to each bound gate (positive = SIDE2, negative = SIDE1).
-        Double dist1 = null, dist2 = null;
-        if (gate1 != null) {
-            dist1 = (normalAxis == Direction.Axis.X) ? (gate1.getX() + 0.5 - gx) : (gate1.getZ() + 0.5 - gz);
+        // Fixed width (perpendicular to axis), dynamic length along axis between controller and outer gate
+    double widthHalf = HALF_SIDE;
+    double pad = 2.0; // reduce detection length by 2 blocks toward each side gate
+
+        // Side 1 (negative) rectangle
+        double s1HalfAxis = HALF_SIDE; // fallback
+        double s1AxisMid = axisCenter + OFFSET_NEG;
+        if (g1 != null) {
+            double len = Math.abs(g1 - axisCenter);
+            double usable = Math.max(0.0, len - pad);
+            s1HalfAxis = Math.max(3.0, usable * 0.5);
+            double sign = (g1 >= axisCenter) ? 1.0 : -1.0; // should be -1 for side1
+            // mid is axisCenter displaced toward g1 by half usable
+            double midAxis = axisCenter + sign * (usable * 0.5);
+            if (gateAxis == Direction.Axis.X) { s1AxisMid = midAxis; } else { s1AxisMid = midAxis; }
         }
-        if (gate2 != null) {
-            dist2 = (normalAxis == Direction.Axis.X) ? (gate2.getX() + 0.5 - gx) : (gate2.getZ() + 0.5 - gz);
+
+        // Side 2 (positive) rectangle
+        double s2HalfAxis = HALF_SIDE; // fallback
+        double s2AxisMid = axisCenter + OFFSET_POS;
+        if (g2 != null) {
+            double len = Math.abs(g2 - axisCenter);
+            double usable = Math.max(0.0, len - pad);
+            s2HalfAxis = Math.max(3.0, usable * 0.5);
+            double sign = (g2 >= axisCenter) ? 1.0 : -1.0; // should be +1 for side2
+            double midAxis = axisCenter + sign * (usable * 0.5);
+            if (gateAxis == Direction.Axis.X) { s2AxisMid = midAxis; } else { s2AxisMid = midAxis; }
         }
 
-        Double negDist = null, posDist = null; // signed
-        if (dist1 != null) {
-            if (dist1 < 0) negDist = (negDist == null) ? dist1 : Math.min(negDist, dist1);
-            if (dist1 > 0) posDist = (posDist == null) ? dist1 : Math.max(posDist, dist1);
-        }
-        if (dist2 != null) {
-            if (dist2 < 0) negDist = (negDist == null) ? dist2 : Math.min(negDist, dist2);
-            if (dist2 > 0) posDist = (posDist == null) ? dist2 : Math.max(posDist, dist2);
-        }
-
-        // Fallbacks to legacy constants when gates are missing or both are on same side
-        double a1cx, a1cz, a2cx, a2cz;
-        double half1, half2;
-
-        if (negDist != null) {
-            // Use distance to the NEAREST FACE of the 2-block-thick gate, not its center
-            double usable = Math.max(0.0, Math.abs(negDist) - GATE_HALF_THICKNESS);
-            double off = -0.5 * usable; // negative side offset
-            if (normalAxis == Direction.Axis.Z) { a1cx = gx + off; a1cz = gz; }
-            else { a1cx = gx; a1cz = gz + off; }
-            half1 = Math.max(3.5, Math.min(24.0, usable * 0.5));
+        // Build per-axis rectangle centers and half extents
+        double s1cx, s1cz, s2cx, s2cz, cHalfAxis;
+        if (gateAxis == Direction.Axis.X) {
+            s1cx = s1AxisMid; s1cz = centerZ;
+            s2cx = s2AxisMid; s2cz = centerZ;
+            cHalfAxis = Math.max(2.5, Math.min(s1HalfAxis, s2HalfAxis) - 2.0);
         } else {
-            // Legacy placement/size
-            if (normalAxis == Direction.Axis.Z) { a1cx = gx + OFFSET_NEG; a1cz = gz; }
-            else { a1cx = gx; a1cz = gz + OFFSET_NEG; }
-            half1 = HALF_SIDE;
+            s1cx = centerX; s1cz = s1AxisMid;
+            s2cx = centerX; s2cz = s2AxisMid;
+            cHalfAxis = Math.max(2.5, Math.min(s1HalfAxis, s2HalfAxis) - 2.0);
         }
 
-        if (posDist != null) {
-            double usable = Math.max(0.0, Math.abs(posDist) - GATE_HALF_THICKNESS);
-            double off = 0.5 * usable; // positive side offset
-            if (normalAxis == Direction.Axis.Z) { a2cx = gx + off; a2cz = gz; }
-            else { a2cx = gx; a2cz = gz + off; }
-            half2 = Math.max(3.5, Math.min(24.0, usable * 0.5));
-        } else {
-            if (normalAxis == Direction.Axis.Z) { a2cx = gx + OFFSET_POS; a2cz = gz; }
-            else { a2cx = gx; a2cz = gz + OFFSET_POS; }
-            half2 = HALF_SIDE;
-        }
+        boolean inSide1 = anyPlayerInRect(world,
+                s1cx, s1cz,
+                (gateAxis == Direction.Axis.X) ? s1HalfAxis : widthHalf,
+                (gateAxis == Direction.Axis.X) ? widthHalf : s1HalfAxis);
 
-        boolean inSide1  = KarmaGateBlockEntity.anyPlayerInSquare(world, a1cx, a1cz, half1);
-        boolean inSide2  = KarmaGateBlockEntity.anyPlayerInSquare(world, a2cx, a2cz, half2);
+        boolean inSide2 = anyPlayerInRect(world,
+                s2cx, s2cz,
+                (gateAxis == Direction.Axis.X) ? s2HalfAxis : widthHalf,
+                (gateAxis == Direction.Axis.X) ? widthHalf : s2HalfAxis);
 
-        // Center area: derive dynamically from the nearer side area to avoid overlaps, with a small margin
-        double centerHalf = Math.max(2.5, Math.min(half1, half2) - 2.0);
-        boolean inCenter = KarmaGateBlockEntity.anyPlayerInSquare(world, gx, gz, centerHalf);
+        boolean inCenter = anyPlayerInRect(world,
+                centerX, centerZ,
+                (gateAxis == Direction.Axis.X) ? cHalfAxis : widthHalf,
+                (gateAxis == Direction.Axis.X) ? widthHalf : cHalfAxis);
 
         /* cooldown gates all */
         if (cooldownTicks > 0) {
@@ -559,6 +565,24 @@ public final class KarmaGateController {
     private void stopAllSteam(World world) {
         enableSteam(world, steamSide1, false);
         enableSteam(world, steamSide2, false);
+    }
+
+    /** Check if any player is inside an axis-aligned rectangle centered at (cx,cz) with half extents (hx,hz). */
+    private static boolean anyPlayerInRect(World world, double cx, double cz, double hx, double hz) {
+        // Fast-path: if hx==hz, defer to square implementation
+        if (Math.abs(hx - hz) < 1e-3) {
+            return KarmaGateBlockEntity.anyPlayerInSquare(world, cx, cz, hx);
+        }
+        // Otherwise, sample four squares covering the rectangle conservatively
+        double hh = Math.max(hx, hz);
+        // Use slightly smaller sub-squares to reduce overreach
+        double s = hh * 0.7071; // ~1/sqrt(2) to cover both dimensions in a plus pattern
+        if (KarmaGateBlockEntity.anyPlayerInSquare(world, cx, cz, s)) return true;
+        if (KarmaGateBlockEntity.anyPlayerInSquare(world, cx + (hx - s), cz, s)) return true;
+        if (KarmaGateBlockEntity.anyPlayerInSquare(world, cx - (hx - s), cz, s)) return true;
+        if (KarmaGateBlockEntity.anyPlayerInSquare(world, cx, cz + (hz - s), s)) return true;
+        if (KarmaGateBlockEntity.anyPlayerInSquare(world, cx, cz - (hz - s), s)) return true;
+        return false;
     }
 
     /* ===================== Gate helpers ===================== */
