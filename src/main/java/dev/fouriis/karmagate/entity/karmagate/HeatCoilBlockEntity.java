@@ -37,6 +37,84 @@ public class HeatCoilBlockEntity extends BlockEntity implements GeoBlockEntity {
         super(ModBlockEntities.HEAT_COIL_BLOCK_ENTITY, pos, state);
     }
 
+    /* ================= client-side visual flicker ================= */
+    // A short-lived, client-only dip in perceived heat used to visually flicker when water hits.
+    // None of these fields are networked or persisted.
+    private long clientFlickerStartTick = 0L;
+    private int clientFlickerDuration = 0;
+    private float clientFlickerDip = 0f; // absolute dip amount from baseAtStart
+    private float clientFlickerBaseAtStart = 0f; // base heat when pulse started
+    private int clientFlickerHoldTicks = 0; // initial ticks to hold at min
+
+    /**
+     * Client-only: briefly reduce the visual heat by up to {@code peakDip} and ease it back over {@code durationTicks}.
+     * Safe to call from client particle effects/audio handlers.
+     */
+    public void clientPulseCool(float peakDip, int durationTicks) {
+        if (world == null || !world.isClient) return; // visual-only on client
+        if (peakDip <= 0f || durationTicks <= 0) return;
+        long now = world.getTime();
+        float baseNow = clamp01(this.heat);
+
+        // Choose a random lower visual heat target between 20%..60% of current base heat
+        // Then convert to a dip amount, capped by peakDip
+        float minFactor = 0.20f;
+        float maxFactor = 0.60f;
+        float factor = (float)(minFactor + (maxFactor - minFactor) * Math.random());
+        float targetVisual = baseNow * factor;
+        float desiredDip = Math.max(0f, baseNow - targetVisual);
+        float dip = Math.min(peakDip, desiredDip);
+        if (dip <= 0f) return;
+
+        // If a pulse is active, deepen dip if this one is stronger and extend duration
+        if (this.clientFlickerDuration > 0) {
+            // Keep earliest start so we don't pop upwards; just extend remaining time
+            long elapsed = Math.max(0L, now - this.clientFlickerStartTick);
+            int remaining = Math.max(0, this.clientFlickerDuration - (int)elapsed);
+            this.clientFlickerDuration = remaining + durationTicks;
+            this.clientFlickerDip = Math.max(this.clientFlickerDip, dip);
+            // Refresh hold for a snappier repeated hit (1-3 ticks)
+            this.clientFlickerHoldTicks = 1 + (int)(Math.random() * 3);
+        } else {
+            this.clientFlickerStartTick = now;
+            this.clientFlickerDuration = durationTicks;
+            this.clientFlickerBaseAtStart = baseNow;
+            this.clientFlickerDip = dip;
+            this.clientFlickerHoldTicks = 1 + (int)(Math.random() * 3); // brief min hold
+        }
+    }
+
+    /**
+     * Heat used by client-side visuals (base server heat minus any active client flicker dip).
+     */
+    public float getVisualHeat() {
+        float baseNow = this.heat;
+        if (world == null || !world.isClient || clientFlickerDuration <= 0 || clientFlickerDip <= 0f) return baseNow;
+        long now = world.getTime();
+        int elapsed = (int)Math.max(0L, now - clientFlickerStartTick);
+        if (elapsed >= clientFlickerDuration) {
+            // reset when complete
+            clientFlickerDuration = 0;
+            clientFlickerDip = 0f;
+            clientFlickerHoldTicks = 0;
+            return baseNow;
+        }
+
+        // Hold at the minimum for the first few ticks for a snappy aggressive dip
+        if (elapsed < clientFlickerHoldTicks) {
+            float minVisual = clientFlickerBaseAtStart - clientFlickerDip;
+            return clamp01(minVisual);
+        }
+
+        // Ease back quickly after the hold using an ease-out cubic with a subtle ripple
+        float t = (elapsed - clientFlickerHoldTicks) / (float)Math.max(1, clientFlickerDuration - clientFlickerHoldTicks); // 0..1
+        // easeOutCubic: 1 - (1 - t)^3
+        float ease = 1f - (float)Math.pow(1f - t, 3.0);
+        float ripple = 0.92f + 0.08f * (float)Math.sin(t * Math.PI * 2.5);
+        float dipNow = clientFlickerDip * (1f - ease) * ripple;
+        return clamp01(baseNow - dipNow);
+    }
+
     /* ================= public API (SERVER) ================= */
 
     /** Enqueue a heat contribution to be applied this tick (positive heats, negative cools). */

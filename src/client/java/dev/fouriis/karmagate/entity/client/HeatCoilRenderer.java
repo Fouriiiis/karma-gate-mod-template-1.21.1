@@ -33,7 +33,7 @@ public class HeatCoilRenderer extends GeoBlockRenderer<HeatCoilBlockEntity> {
                        int packedLight,
                        int packedOverlay) {
 
-    float heat = animatable.getHeat();
+    float heat = animatable.getVisualHeat();
     // Clamp heat and apply a small dead zone so zero/near-zero shows only the base texture
     float h = Math.max(0f, Math.min(1f, heat));
     float threshold = 0.05f; // no emissive under 5% heat
@@ -112,7 +112,7 @@ public class HeatCoilRenderer extends GeoBlockRenderer<HeatCoilBlockEntity> {
                            int packedOverlay) {
 
             if (animatable.getWorld() == null) return;
-            float heat = animatable.getHeat();
+            float heat = animatable.getVisualHeat();
             // Distortion kicks in a bit later than glow so it doesn't look odd at very low heat
             float h = Math.max(0f, Math.min(1f, heat));
             float threshold = 0.5f; // shimmer begins around half heat

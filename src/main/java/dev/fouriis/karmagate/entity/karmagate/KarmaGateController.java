@@ -103,6 +103,7 @@ public final class KarmaGateController {
     private static final int GATE_ANIMATION_CLOSE_TICKS = 160;
 
     private static final int CIRCULAR_STEP_TICKS = 6; // for wait light chase
+    private static final int MIDDLE_OPEN_TIMEOUT_TICKS = 600; // auto-close safety
 
     /* ===================== Bound outer gates ===================== */
     private BlockPos gate1 = null; // NEG
@@ -128,6 +129,7 @@ public final class KarmaGateController {
     // door animation waits
     private int outerAnimWait = 0;  // used in ClosingAirLock (close) and OpeningSide (open)
     private int innerAnimWait = 0;  // used in OpeningMiddle (open) and ClosingMiddle (close)
+    private int middleOpenTicks = 0; // ticks spent in MiddleOpen
 
     private Mode mode = Mode.MiddleClosed;
     private Side entrySide = null;   // which side initiated (NEG=SIDE1 / POS=SIDE2)
@@ -220,6 +222,7 @@ public final class KarmaGateController {
         cooldownTicks = 0;
         lampBlink = 0;
         outerAnimWait = innerAnimWait = 0;
+    middleOpenTicks = 0;
         entrySide = null;
         mode = Mode.MiddleClosed;
         lightsSide1.allOff(controllerBE.getWorld());
@@ -291,15 +294,17 @@ public final class KarmaGateController {
             cHalfAxis = Math.max(2.5, Math.min(s1HalfAxis, s2HalfAxis) - 2.0);
         }
 
-        boolean inSide1 = anyPlayerInRect(world,
+    boolean inSide1 = anyPlayerInRectForSide(world,
                 s1cx, s1cz,
                 (gateAxis == Direction.Axis.X) ? s1HalfAxis : widthHalf,
-                (gateAxis == Direction.Axis.X) ? widthHalf : s1HalfAxis);
+        (gateAxis == Direction.Axis.X) ? widthHalf : s1HalfAxis,
+        Side.SIDE1);
 
-        boolean inSide2 = anyPlayerInRect(world,
+    boolean inSide2 = anyPlayerInRectForSide(world,
                 s2cx, s2cz,
                 (gateAxis == Direction.Axis.X) ? s2HalfAxis : widthHalf,
-                (gateAxis == Direction.Axis.X) ? widthHalf : s2HalfAxis);
+        (gateAxis == Direction.Axis.X) ? widthHalf : s2HalfAxis,
+        Side.SIDE2);
 
         boolean inCenter = anyPlayerInRect(world,
                 centerX, centerZ,
@@ -387,7 +392,7 @@ public final class KarmaGateController {
                 if (outerAnimWait > 0) { outerAnimWait--; break; }
 
                 mode = Mode.Waiting;
-                setWaterFlowForSide(world, entrySide, 1.0f);
+                setWaterFlowForSide(world, entrySide, 0.5f);
                 setWaterFlowForSide(world, opposite(entrySide), 0.0f);
                 setSteamEnabledForSide(world, entrySide, true);
                 KarmaGateMod.LOGGER.info("[GateCtrl @{}] outer closed → Waiting", controllerBE.getPos());
@@ -416,19 +421,23 @@ public final class KarmaGateController {
                 if (innerAnimWait > 0) { innerAnimWait--; break; }
                 mode = Mode.MiddleOpen;
                 setWaterFlowForSide(world, opposite(entrySide), 0.0f);
+                middleOpenTicks = 0; // start timeout counter
                 KarmaGateMod.LOGGER.info("[GateCtrl @{}] inner open → MiddleOpen", controllerBE.getPos());
             }
 
             case MiddleOpen -> {
                 // idle lights chase while inner is open
                 chaseCircularWaitSequence(world);
+                // advance timeout counter
+                middleOpenTicks++;
 
                 // leave when center is empty (and the player progressed to the opposite side)
-                boolean progressedAcross =
-                        (entrySide == Side.SIDE1 && inSide2) ||
-                        (entrySide == Side.SIDE2 && inSide1);
+                boolean entryOccupied = (entrySide == Side.SIDE1) ? inSide1 : inSide2;
+                boolean oppositeOccupied = (entrySide == Side.SIDE1) ? inSide2 : inSide1;
+                boolean allCrossed = !entryOccupied && !inCenter && oppositeOccupied;
+                boolean timeout = middleOpenTicks >= MIDDLE_OPEN_TIMEOUT_TICKS;
 
-                if (!inCenter && progressedAcross) {
+                if (allCrossed || timeout) {
                     controllerBE.setOpen(false);                // close middle
                     innerAnimWait = GATE_ANIMATION_CLOSE_TICKS; // wait for anim
                     mode = Mode.ClosingMiddle;
@@ -436,7 +445,11 @@ public final class KarmaGateController {
                     // Water ON on entry side while closing middle
                     setWaterFlowForSide(world, entrySide, 1.0f);
 
-                    KarmaGateMod.LOGGER.info("[GateCtrl @{}] center clear → ClosingMiddle", controllerBE.getPos());
+                    if (timeout) {
+                        KarmaGateMod.LOGGER.info("[GateCtrl @{}] timeout {} ticks → ClosingMiddle", controllerBE.getPos(), MIDDLE_OPEN_TIMEOUT_TICKS);
+                    } else {
+                        KarmaGateMod.LOGGER.info("[GateCtrl @{}] all crossed → ClosingMiddle", controllerBE.getPos());
+                    }
                 }
             }
 
@@ -452,8 +465,9 @@ public final class KarmaGateController {
                 mode = Mode.OpeningSide;
 
                 // Stop water on entry side; stop heat on opposite side
-                setWaterFlowForSide(world, entrySide, 0.0f);
+                setWaterFlowForSide(world, entrySide, 0.5f);
                 setHeatEnabledForSide(world, opposite(entrySide), false);
+
 
                 KarmaGateMod.LOGGER.info("[GateCtrl @{}] inner closed → OpeningSide ({})", controllerBE.getPos(), entrySide);
             }
@@ -503,6 +517,7 @@ public final class KarmaGateController {
     }
     private void setWaterFlow(World world, List<BlockPos> list, float flow) {
         boolean enable = flow > 0.02f;
+        //KarmaGateMod.LOGGER.info("[GateCtrl @{}] setWaterFlow: targets={}, flow={}, enable={}", controllerBE.getPos(), list.size(), String.format("%.2f", flow), enable);
         for (BlockPos p : list) {
             BlockState s = world.getBlockState(p);
             if (s.getBlock() instanceof WaterStreamBlock) {
@@ -569,20 +584,79 @@ public final class KarmaGateController {
 
     /** Check if any player is inside an axis-aligned rectangle centered at (cx,cz) with half extents (hx,hz). */
     private static boolean anyPlayerInRect(World world, double cx, double cz, double hx, double hz) {
-        // Fast-path: if hx==hz, defer to square implementation
-        if (Math.abs(hx - hz) < 1e-3) {
-            return KarmaGateBlockEntity.anyPlayerInSquare(world, cx, cz, hx);
+        if (world == null) return false;
+        double ahx = Math.max(0.0, Math.abs(hx));
+        double ahz = Math.max(0.0, Math.abs(hz));
+        // If it's a square, delegate to the existing square helper for consistency
+        if (Math.abs(ahx - ahz) < 1e-6) {
+            return KarmaGateBlockEntity.anyPlayerInSquare(world, cx, cz, ahx);
         }
-        // Otherwise, sample four squares covering the rectangle conservatively
-        double hh = Math.max(hx, hz);
-        // Use slightly smaller sub-squares to reduce overreach
-        double s = hh * 0.7071; // ~1/sqrt(2) to cover both dimensions in a plus pattern
-        if (KarmaGateBlockEntity.anyPlayerInSquare(world, cx, cz, s)) return true;
-        if (KarmaGateBlockEntity.anyPlayerInSquare(world, cx + (hx - s), cz, s)) return true;
-        if (KarmaGateBlockEntity.anyPlayerInSquare(world, cx - (hx - s), cz, s)) return true;
-        if (KarmaGateBlockEntity.anyPlayerInSquare(world, cx, cz + (hz - s), s)) return true;
-        if (KarmaGateBlockEntity.anyPlayerInSquare(world, cx, cz - (hz - s), s)) return true;
+        double minX = cx - ahx, maxX = cx + ahx;
+        double minZ = cz - ahz, maxZ = cz + ahz;
+        for (net.minecraft.entity.player.PlayerEntity p : world.getPlayers()) {
+            if (!playerEligibleForDetection(p)) continue; // ignore spectators and non-eligible players
+            double px = p.getX();
+            double pz = p.getZ();
+            if (px >= minX && px <= maxX && pz >= minZ && pz <= maxZ) return true;
+        }
         return false;
+    }
+
+    /** Basic filter to decide if a player should be considered by gate detection. */
+    private static boolean playerEligibleForDetection(net.minecraft.entity.player.PlayerEntity p) {
+        // Ignore spectators entirely; hook for future karma check
+        if (p.isSpectator()) return false;
+        return passesKarmaPlaceholder(p);
+    }
+
+    /** Placeholder for karma checks; always true for now. Wire actual karma logic later. */
+    private static boolean passesKarmaPlaceholder(net.minecraft.entity.player.PlayerEntity p) {
+        return true;
+    }
+
+    /** Side-aware detection: returns false if the side is disabled (LEVEL_D) or no eligible players in rect. */
+    private boolean anyPlayerInRectForSide(World world, double cx, double cz, double hx, double hz, Side side) {
+        if (world == null) return false;
+        if (!isSideEnabled(side)) return false; // side disabled via karma level → ignore entirely
+        double ahx = Math.max(0.0, Math.abs(hx));
+        double ahz = Math.max(0.0, Math.abs(hz));
+        if (Math.abs(ahx - ahz) < 1e-6) {
+            // Square case: reuse square helper but still filter players by eligibility and side karma
+            double minX = cx - ahx, maxX = cx + ahx;
+            double minZ = cz - ahz, maxZ = cz + ahz;
+            for (net.minecraft.entity.player.PlayerEntity p : world.getPlayers()) {
+                if (!playerEligibleForDetection(p)) continue;
+                if (!passesKarmaForSide(p, side)) continue;
+                double px = p.getX();
+                double pz = p.getZ();
+                if (px >= minX && px <= maxX && pz >= minZ && pz <= maxZ) return true;
+            }
+            return false;
+        }
+        double minX = cx - ahx, maxX = cx + ahx;
+        double minZ = cz - ahz, maxZ = cz + ahz;
+        for (net.minecraft.entity.player.PlayerEntity p : world.getPlayers()) {
+            if (!playerEligibleForDetection(p)) continue;
+            if (!passesKarmaForSide(p, side)) continue;
+            double px = p.getX();
+            double pz = p.getZ();
+            if (px >= minX && px <= maxX && pz >= minZ && pz <= maxZ) return true;
+        }
+        return false;
+    }
+
+    /** A side is enabled when its karma requirement is not LEVEL_D. */
+    private boolean isSideEnabled(Side side) {
+        return switch (side) {
+            case SIDE1 -> karmaSide1 != KarmaLevel.LEVEL_D;
+            case SIDE2 -> karmaSide2 != KarmaLevel.LEVEL_D;
+        };
+    }
+
+    /** Placeholder per-player/per-side karma rule. For now, only gate-wide side disable is enforced. */
+    private boolean passesKarmaForSide(net.minecraft.entity.player.PlayerEntity p, Side side) {
+        // If the side is disabled, no player passes. Otherwise allow all.
+        return isSideEnabled(side);
     }
 
     /* ===================== Gate helpers ===================== */

@@ -1,6 +1,6 @@
 {
   "parent": "minecraft:item/generated",
   "textures": {
-    "layer0": "karma-gate-mod:item/hologram_projector"
+    "layer0": "karma-gate-mod:item/mod_glyph_projector_block_texture_with_code"
   }
 }

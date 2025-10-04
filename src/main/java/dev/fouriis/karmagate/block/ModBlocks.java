@@ -8,6 +8,9 @@ import dev.fouriis.karmagate.block.karmagate.WaterStreamBlock;
 import dev.fouriis.karmagate.block.karmagate.GateLightBlock;
 import dev.fouriis.karmagate.block.karmagate.HeatCoilBlock;
 import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
+import dev.fouriis.karmagate.item.KarmaGateItem;
+import dev.fouriis.karmagate.item.HeatCoilItem;
+import dev.fouriis.karmagate.item.GateLightItem;
 import net.minecraft.block.Block;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.Item;
@@ -68,8 +71,17 @@ public class ModBlocks {
     }
 
     private static Item registerBlockItem(String name, Block block) {
-        return Registry.register(Registries.ITEM, Identifier.of(KarmaGateMod.MOD_ID, name),
-                new BlockItem(block, new Item.Settings()));
+        Item item;
+        if (block instanceof KarmaGateBlock) {
+            item = new KarmaGateItem(block, new Item.Settings());
+        } else if (name.equals("heat_coil")) {
+            item = new HeatCoilItem(block, new Item.Settings());
+        } else if (name.equals("gate_light")) {
+            item = new GateLightItem(block, new Item.Settings());
+        } else {
+            item = new BlockItem(block, new Item.Settings());
+        }
+        return Registry.register(Registries.ITEM, Identifier.of(KarmaGateMod.MOD_ID, name), item);
     }
     
 

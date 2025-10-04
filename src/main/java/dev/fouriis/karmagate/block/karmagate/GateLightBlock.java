@@ -33,7 +33,7 @@ public class GateLightBlock extends BlockWithEntity {
 
     public GateLightBlock(Settings settings) {
         // Make luminance depend on the LIT property
-        super(settings.luminance(state -> state.contains(LIT) && state.get(LIT) ? 6 : 0));
+        super(settings.luminance(state -> state.contains(LIT) && state.get(LIT) ? 9 : 0));
         setDefaultState(getStateManager().getDefaultState()
             .with(FACING, Direction.NORTH)
             .with(LIT, false));

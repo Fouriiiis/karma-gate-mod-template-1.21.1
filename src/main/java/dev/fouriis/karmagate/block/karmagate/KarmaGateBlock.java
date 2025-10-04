@@ -9,6 +9,7 @@ import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.BlockWithEntity;
 import net.minecraft.block.EntityShapeContext;
+import net.minecraft.block.BlockRenderType;
 import net.minecraft.block.ShapeContext;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.block.entity.BlockEntityTicker;
@@ -44,6 +45,12 @@ public class KarmaGateBlock extends BlockWithEntity {
     public KarmaGateBlock(Settings settings) {
         super(settings.nonOpaque());
         setDefaultState(getStateManager().getDefaultState().with(AXIS, Direction.Axis.Z));
+    }
+
+    // Use the BlockEntityRenderer (GeoBlockRenderer) instead of the baked model
+    @Override
+    public BlockRenderType getRenderType(BlockState state) {
+        return BlockRenderType.ENTITYBLOCK_ANIMATED;
     }
 
     @Override

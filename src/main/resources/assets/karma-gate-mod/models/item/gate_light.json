@@ -1,3 +1,4 @@
 {
-  "parent": "karma-gate-mod:block/gate_light"
+  "parent": "builtin/entity",
+  "textures": { "particle": "karma-gate-mod:block/gate_light" }
 }

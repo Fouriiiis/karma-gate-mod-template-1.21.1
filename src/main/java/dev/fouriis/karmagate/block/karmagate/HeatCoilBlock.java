@@ -5,6 +5,9 @@ import com.mojang.serialization.MapCodec;
 import dev.fouriis.karmagate.entity.ModBlockEntities;
 import dev.fouriis.karmagate.entity.karmagate.HeatCoilBlockEntity;
 import net.minecraft.block.BlockState;
+import net.minecraft.block.Block;
+import net.minecraft.util.shape.VoxelShape;
+import net.minecraft.block.ShapeContext;
 import net.minecraft.block.BlockWithEntity;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.block.entity.BlockEntityTicker;
@@ -24,6 +27,10 @@ import net.minecraft.world.World;
 
 public class HeatCoilBlock extends BlockWithEntity {
     public static final DirectionProperty FACING = Properties.HORIZONTAL_FACING;
+    // Expanded hitbox: extend 0.5 blocks (8 px) outward on X/Z, so cube spans -0.5 .. 1.5 in both axes.
+    // createCuboidShape uses 1/16th block units. -8 -> -0.5 blocks, 24 -> 1.5 blocks.
+    // Height kept full (0..16). Symmetric, so no rotation per facing needed.
+    private static final VoxelShape EXPANDED_SHAPE = Block.createCuboidShape(-8, 0, -8, 24, 16, 24);
 
     public HeatCoilBlock(Settings settings) {
         super(settings);
@@ -54,6 +61,18 @@ public class HeatCoilBlock extends BlockWithEntity {
     @Override
     public BlockEntity createBlockEntity(BlockPos pos, BlockState state) {
         return new HeatCoilBlockEntity(pos, state);
+    }
+
+    // Outline (selection) shape enlarged
+    @Override
+    public VoxelShape getOutlineShape(BlockState state, net.minecraft.world.BlockView world, BlockPos pos, ShapeContext context) {
+        return EXPANDED_SHAPE;
+    }
+
+    // Collision shape enlarged as well; if you only wanted selection, remove this override.
+    @Override
+    public VoxelShape getCollisionShape(BlockState state, net.minecraft.world.BlockView world, BlockPos pos, ShapeContext context) {
+        return EXPANDED_SHAPE;
     }
 
     @Override

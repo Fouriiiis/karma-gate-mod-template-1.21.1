@@ -4,6 +4,10 @@ import dev.fouriis.karmagate.entity.ModBlockEntities;
 import dev.fouriis.karmagate.entity.client.GateLightBlockRenderer;
 import dev.fouriis.karmagate.entity.client.HeatCoilRenderer;
 import dev.fouriis.karmagate.entity.client.KarmaGateBlockRenderer;
+import dev.fouriis.karmagate.item.KarmaGateItemGeoRenderer;
+import dev.fouriis.karmagate.entity.client.HeatCoilItemModel;
+import dev.fouriis.karmagate.entity.client.GateLightItemModel;
+import software.bernie.geckolib.renderer.GeoItemRenderer;
 import dev.fouriis.karmagate.hologram.HologramProjectorRenderer;
 import dev.fouriis.karmagate.particle.ModParticles;
 import dev.fouriis.karmagate.particle.SteamParticle;
@@ -22,6 +26,7 @@ import net.minecraft.client.render.block.entity.BlockEntityRendererFactories;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.client.MinecraftClient;
+import net.fabricmc.fabric.api.client.rendering.v1.BuiltinItemRendererRegistry;
 import java.util.Map;
 import java.util.HashMap;
 import dev.fouriis.karmagate.entity.karmagate.WaterStreamBlockEntity;
@@ -39,6 +44,47 @@ public class KarmaGateModClient implements ClientModInitializer {
 
 		ParticleFactoryRegistry.getInstance().register(ModParticles.WATER_STREAM, sprites -> new WaterStreamParticle.Factory(sprites));
 		ParticleFactoryRegistry.getInstance().register(ModParticles.STEAM, sprites -> new SteamParticle.Factory(sprites));
+
+		// Register Karma Gate item renderer with custom transforms
+		var gateItemRenderer = new KarmaGateItemGeoRenderer();
+		BuiltinItemRendererRegistry.INSTANCE.register(
+			dev.fouriis.karmagate.block.ModBlocks.KARMA_GATE.asItem(),
+			(stack, mode, matrices, vertexConsumers, light, overlay) -> gateItemRenderer.render(stack, mode, matrices, vertexConsumers, light, overlay)
+		);
+
+		// Heat Coil item renderer (simple small centered)
+		var heatCoilItemRenderer = new GeoItemRenderer<>(new HeatCoilItemModel());
+		BuiltinItemRendererRegistry.INSTANCE.register(
+			dev.fouriis.karmagate.block.ModBlocks.HEAT_COIL.asItem(),
+			(stack, mode, matrices, vertexConsumers, light, overlay) -> {
+				matrices.push();
+				// Increased size by 100% (0.18 -> 0.36). Drop slightly to keep centered visually.
+				matrices.translate(0.5f, 0.40f, 0.5f);
+				matrices.scale(0.36f, 0.36f, 0.36f);
+				matrices.multiply(net.minecraft.util.math.RotationAxis.POSITIVE_Y.rotationDegrees(35f));
+				matrices.translate(-0.5f, -0.5f, -0.5f);
+				heatCoilItemRenderer.render(stack, mode, matrices, vertexConsumers, light, overlay);
+				matrices.pop();
+			}
+		);
+
+		// Gate Light item renderer
+		var gateLightItemRenderer = new GeoItemRenderer<>(new GateLightItemModel());
+		BuiltinItemRendererRegistry.INSTANCE.register(
+			dev.fouriis.karmagate.block.ModBlocks.GATE_LIGHT.asItem(),
+			(stack, mode, matrices, vertexConsumers, light, overlay) -> {
+				matrices.push();
+				// Increased size by 100% (0.22 -> 0.44). Lower slightly to keep within slot.
+				matrices.translate(0.5f, 0.43f, 0.5f);
+				matrices.scale(0.44f, 0.44f, 0.44f);
+				matrices.multiply(net.minecraft.util.math.RotationAxis.POSITIVE_Y.rotationDegrees(45f));
+				matrices.translate(-0.5f, -0.5f, -0.5f);
+				gateLightItemRenderer.render(stack, mode, matrices, vertexConsumers, light, overlay);
+				matrices.pop();
+			}
+		);
+
+
 
 		// Install client implementation for audio shim
 		final Map<BlockPos, MultiSound.Handle> clampLoops = new HashMap<>();
