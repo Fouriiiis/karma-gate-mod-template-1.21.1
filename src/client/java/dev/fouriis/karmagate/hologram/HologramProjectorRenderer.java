@@ -9,6 +9,7 @@ import net.minecraft.client.render.block.entity.BlockEntityRenderer;
 import net.minecraft.client.render.block.entity.BlockEntityRendererFactory;
 import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.client.world.ClientWorld;
 import net.minecraft.resource.Resource;
 import net.minecraft.resource.ResourceManager;
 import net.minecraft.util.Identifier;
@@ -16,6 +17,8 @@ import net.minecraft.util.math.RotationAxis;
 import net.minecraft.util.math.ColorHelper;
 import net.minecraft.entity.player.PlayerEntity;
 import org.joml.*;
+
+import java.lang.Math;
 
 public class HologramProjectorRenderer implements BlockEntityRenderer<HologramProjectorBlockEntity> {
 
@@ -61,17 +64,22 @@ public class HologramProjectorRenderer implements BlockEntityRenderer<HologramPr
 
     @Override
     public void render(HologramProjectorBlockEntity be, float tickDelta, MatrixStack ms, VertexConsumerProvider buf, int light, int overlay) {
-    clientFrameCounter++;
+        clientFrameCounter++;
 
-    var frame = FRAMES.get(be.getSymbolKey());
+        var frame = FRAMES.get(be.getSymbolKey());
         if (frame == null) return;
 
         // === Time / effects ===
-        float time = (MinecraftClient.getInstance().world.getTime() + tickDelta);
+        ClientWorld world = MinecraftClient.getInstance().world;
+        long mcTime = (world != null) ? world.getTime() : 0L;
+        double time = mcTime + (double) tickDelta;
         float flicker = be.getFlicker();
         float glow = be.getGlow();
         float brightness = 0.85f * (0.9f - 0.6f * flicker);
-        float wobble = (float) java.lang.Math.sin(time * 0.35) * 0.0025f * (0.5f + 0.5f * flicker);
+        // Bound sine argument to avoid precision loss at large times
+        double angle = (time * 0.35) % (Math.PI * 2.0);
+        if (angle < 0) angle += Math.PI * 2.0;
+        float wobble = (float) (Math.sin(angle) * 0.0025f * (0.5f + 0.5f * flicker));
 
         // === Transform: center the 4×8 panel at the block and face the block's direction ===
         ms.push();
@@ -120,6 +128,10 @@ public class HologramProjectorRenderer implements BlockEntityRenderer<HologramPr
 
         // Static amount handled as geometry cutout probability (no alpha fade under shaderpacks)
         float staticLevel = be.getStaticLevel();
+        if (staticLevel >= 0.98f) {
+            ms.pop();
+            return;
+        }
         float baseAlpha = 0.95f; // keep visible; removal happens via geometry cutout
         int argb = ColorHelper.Argb.getArgb((int) (baseAlpha * 255), (int) (rf * 255), (int) (gf * 255), (int) (bf * 255));
 
@@ -134,47 +146,49 @@ public class HologramProjectorRenderer implements BlockEntityRenderer<HologramPr
         Vector4f q4 = new Vector4f(cx - halfTrimW, cy - halfTrimH, 0f, 1f).mul(pm); // BL
         Vector3f n = new Vector3f(0f, 0f, 1f).mul(nm).normalize();
 
-    // === Noise sampling parameters (panel-space) ===
-    ensureNoiseLoaded();
-    float noiseScroll = time * NOISE_SCROLL_CYCLES_PER_TICK; // fractional texture cycles over time (V direction)
+        // === Noise sampling parameters (panel-space) ===
+        ensureNoiseLoaded();
+        // Use only the fractional part of scroll to keep indices bounded for large times
+        double noisePhase = (time * NOISE_SCROLL_CYCLES_PER_TICK) % 1.0;
+        if (noisePhase < 0) noisePhase += 1.0;
 
-    // We now sample noise at original resolution BUT scaled so ONE full noise texture == ONE world block.
-    // Therefore across the trimmed panel (trimW x trimH blocks) we have trimW * NOISE_W pixels horizontally.
-    // Geometry subdivision grid dimensions scale with panel size in blocks to keep 1:1 noise pixels.
-    int gridX = (NOISE_W > 0) ? java.lang.Math.max(1, (int) java.lang.Math.ceil(NOISE_W * trimW)) : FALLBACK_GRID_X;
-    int gridY = (NOISE_H > 0) ? java.lang.Math.max(1, (int) java.lang.Math.ceil(NOISE_H * trimH)) : FALLBACK_GRID_Y;
+        // We now sample noise at original resolution BUT scaled so ONE full noise texture == ONE world block.
+        // Therefore across the trimmed panel (trimW x trimH blocks) we have trimW * NOISE_W pixels horizontally.
+        // Geometry subdivision grid dimensions scale with panel size in blocks to keep 1:1 noise pixels.
+        int gridX = (NOISE_W > 0) ? java.lang.Math.max(1, (int) java.lang.Math.ceil(NOISE_W * trimW)) : FALLBACK_GRID_X;
+        int gridY = (NOISE_H > 0) ? java.lang.Math.max(1, (int) java.lang.Math.ceil(NOISE_H * trimH)) : FALLBACK_GRID_Y;
 
-    // Distance-based LOD + frame skip
-    PlayerEntity player = MinecraftClient.getInstance().player;
-    double distSq = 0;
-    if (player != null) {
-        double dx = (be.getPos().getX() + 0.5) - player.getX();
-        double dy = (be.getPos().getY() + 0.5) - player.getY();
-        double dz = (be.getPos().getZ() + 0.5) - player.getZ();
-        distSq = dx*dx + dy*dy + dz*dz;
-    }
+        // Distance-based LOD + frame skip
+        PlayerEntity player = MinecraftClient.getInstance().player;
+        double distSq = 0;
+        if (player != null) {
+            double dx = (be.getPos().getX() + 0.5) - player.getX();
+            double dy = (be.getPos().getY() + 0.5) - player.getY();
+            double dz = (be.getPos().getZ() + 0.5) - player.getZ();
+            distSq = dx*dx + dy*dy + dz*dz;
+        }
 
-    int lodFactor = 1;
-    if (distSq > LOD2_DIST_SQ) lodFactor = 4; else if (distSq > LOD1_DIST_SQ) lodFactor = 2;
-    if (lodFactor > 1) {
-        gridX = java.lang.Math.max(1, gridX / lodFactor);
-        gridY = java.lang.Math.max(1, gridY / lodFactor);
-    }
+        int lodFactor = 1;
+        if (distSq > LOD2_DIST_SQ) lodFactor = 4; else if (distSq > LOD1_DIST_SQ) lodFactor = 2;
+        if (lodFactor > 1) {
+            gridX = java.lang.Math.max(1, gridX / lodFactor);
+            gridY = java.lang.Math.max(1, gridY / lodFactor);
+        }
 
-    int frameSkip = (distSq > FAR_DIST_SQ) ? FRAME_SKIP_FAR : FRAME_SKIP_NEAR;
-    if (frameSkip > 0 && (clientFrameCounter % (frameSkip + 1)) != 0) {
-        // Still need to pop matrix
-        ms.pop();
-        return; // reuse previous frame's geometry (left rendered in last buffer submission)
-    }
+        int frameSkip = (distSq > FAR_DIST_SQ) ? FRAME_SKIP_FAR : FRAME_SKIP_NEAR;
+        if (frameSkip > 0 && (clientFrameCounter % (frameSkip + 1)) != 0) {
+            // Still need to pop matrix
+            ms.pop();
+            return; // reuse previous frame's geometry (left rendered in last buffer submission)
+        }
 
-    // Downscale uniformly if above cap (preserve aspect so pixels remain roughly square)
-    long total = (long) gridX * (long) gridY;
-    if (total > MAX_NOISE_PIXELS) {
-        double scale = java.lang.Math.sqrt((double) total / (double) MAX_NOISE_PIXELS); // >1
-        gridX = java.lang.Math.max(1, (int) java.lang.Math.round(gridX / scale));
-        gridY = java.lang.Math.max(1, (int) java.lang.Math.round(gridY / scale));
-    }
+        // Downscale uniformly if above cap (preserve aspect so pixels remain roughly square)
+        long total = (long) gridX * (long) gridY;
+        if (total > MAX_NOISE_PIXELS) {
+            double scale = java.lang.Math.sqrt((double) total / (double) MAX_NOISE_PIXELS); // >1
+            gridX = java.lang.Math.max(1, (int) java.lang.Math.round(gridX / scale));
+            gridY = java.lang.Math.max(1, (int) java.lang.Math.round(gridY / scale));
+        }
 
         // Cutout threshold mapping (like your shader: ~0.05 -> ~0.95)
         float cutoff = 0.05f + staticLevel * 0.90f;
@@ -196,7 +210,7 @@ public class HologramProjectorRenderer implements BlockEntityRenderer<HologramPr
                 float panelVCenter = (gy + 0.5f) / gridY;
                 float blockV = panelVCenter * trimH; // (0..trimH)
                 // Precompute iy once per row
-                float vSample = (blockV + noiseScroll) * NOISE_H; // texture space
+                double vSample = ((double) blockV + noisePhase) * NOISE_H; // texture space
                 int iy = floorMod((int) java.lang.Math.floor(vSample), NOISE_H);
 
                 // Horizontal sampling setup
@@ -242,10 +256,10 @@ public class HologramProjectorRenderer implements BlockEntityRenderer<HologramPr
 
     private static Vector4f lerp(Vector4f a, Vector4f b, float t) {
         return new Vector4f(
-            a.x + (b.x - a.x) * t,
-            a.y + (b.y - a.y) * t,
-            a.z + (b.z - a.z) * t,
-            1.0f
+                a.x + (b.x - a.x) * t,
+                a.y + (b.y - a.y) * t,
+                a.z + (b.z - a.z) * t,
+                1.0f
         );
     }
 
