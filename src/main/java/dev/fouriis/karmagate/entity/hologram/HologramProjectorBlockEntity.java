@@ -118,12 +118,16 @@ public class HologramProjectorBlockEntity extends BlockEntity {
     public int getDisplayColor(float tickDelta) {
         if (!lowPower || world == null) return getColorRGB();
 
-        // time in seconds
-        float tSec = (world.getTime() + tickDelta) / 20.0f;
+    // time in seconds (bounded). We only need the phase within a 2-second cycle because
+    // alpha uses cos(pi * t) which itself has a 2s period at 20 TPS (pi * (t+2) = pi*t + 2pi).
+    // Using modulo keeps the cosine argument small and avoids precision issues when
+    // world.getTime() reaches very large values (hundreds of millions of ticks on long uptime servers).
+    long cycleTicks = world.getTime() % 40L; // 40 ticks = 2 seconds at 20 TPS
+    double tSec = (cycleTicks + tickDelta) / 20.0; // 0.0 <= tSec < 2.0
 
         // Cosine-based smooth triangle (0 -> 1 -> 0) with a 2s period:
         // alpha = 0.5 * (1 - cos(pi * t))  => period 2 because cos(pi*(t+2)) = cos(pi*t)
-        float alpha = 0.5f * (1.0f - (float)Math.cos(Math.PI * tSec));
+    float alpha = 0.5f * (1.0f - (float)Math.cos(Math.PI * tSec));
 
         int r1 = (colorRGB >> 16) & 0xFF;
         int g1 = (colorRGB >>  8) & 0xFF;
