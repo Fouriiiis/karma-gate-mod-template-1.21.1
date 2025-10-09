@@ -35,6 +35,9 @@ public class KarmaGateModClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		// This entrypoint is suitable for setting up client-specific logic, such as rendering.
+
+		// Register distant structure billboards
+		dev.fouriis.karmagate.client.DistantStructuresRenderer.init();
 		
 		// Register block entity renderer
 		BlockEntityRendererFactories.register(ModBlockEntities.KARMA_GATE_BLOCK_ENTITY, KarmaGateBlockRenderer::new);
