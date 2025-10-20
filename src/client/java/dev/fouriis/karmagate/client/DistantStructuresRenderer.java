@@ -1,28 +1,34 @@
 package dev.fouriis.karmagate.client;
 
 import com.google.gson.*;
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.systems.VertexSorter;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.LightmapTextureManager;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.VertexConsumer;
+import net.minecraft.client.render.*;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.resource.Resource;
 import net.minecraft.resource.ResourceManager;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.RotationAxis;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.LightType;
 import org.joml.Matrix4f;
 
 import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.List;
 
+import static net.minecraft.client.render.RenderPhase.*;
+
 public final class DistantStructuresRenderer {
 
     private static final Identifier CONFIG_ID = Identifier.of("karma-gate-mod", "structures/distant_structures.json");
     private static final List<Entry> ENTRIES = new ArrayList<>();
     private static boolean loaded = false;
+    private static MatrixStack bobbedStack = null;
 
     /** Billboard entry in world space (units = blocks). */
     public record Entry(
@@ -36,45 +42,86 @@ public final class DistantStructuresRenderer {
     private DistantStructuresRenderer() {}
 
     public static void init() {
-        WorldRenderEvents.AFTER_TRANSLUCENT.register(ctx -> {
+        WorldRenderEvents.BEFORE_ENTITIES.register(ctx -> {
             ensureLoaded();
             if (ENTRIES.isEmpty() || ctx.consumers() == null || ctx.camera() == null) return;
 
-            final MatrixStack matrices = ctx.matrixStack();
-            final Vec3d camPos = ctx.camera().getPos();
-            final float camYaw = ctx.camera().getYaw();
-            final float camPitch = ctx.camera().getPitch();
-            final double farBlocks = computeFarPlaneBlocks(); // far plane distance in world units
+            MinecraftClient mc = MinecraftClient.getInstance();
+            MatrixStack matrices = bobbedStack == null ? ctx.matrixStack() : bobbedStack;
+            Vec3d camPos = ctx.camera().getPos();
+            float tickDelta = ctx.tickCounter().getTickDelta(true);
 
-            for (Entry e : ENTRIES) {
-                // True world target (anchor)
-                final Vec3d target = new Vec3d(e.x, e.y, e.z);
+            Matrix4f savedProj = new Matrix4f(RenderSystem.getProjectionMatrix());
 
-                // Clamp to just inside far plane only if needed (no crosshair pinning)
-                final Vec3d pos = e.alwaysVisible
-                        ? projectToFrustumFar(camPos, camYaw, camPitch, target, e.width, e.height, farBlocks)
-                        : target;
+            double fov = mc.gameRenderer.getFov(ctx.camera(), tickDelta, true);
+            float aspect = (float) mc.getWindow().getFramebufferWidth() / Math.max(1, mc.getWindow().getFramebufferHeight());
+            float near = 0.0001f;
+            float far = (float) (mc.options.getClampedViewDistance() * 16.0 * 100.0);
+            Matrix4f extendedProj = RenderSystem.getProjectionMatrix().setPerspective((float) Math.toRadians(fov), aspect, near, far);
+            RenderSystem.setProjectionMatrix(extendedProj, VertexSorter.BY_DISTANCE);
 
-                // Preserve apparent size when clamped
-                final double trueD  = camPos.distanceTo(target);
-                final double proxyD = camPos.distanceTo(pos);
-                final float scale = (trueD > 1e-3) ? (float)(proxyD / trueD) : 1.0f;
+            VertexConsumerProvider.Immediate immediate = mc.getBufferBuilders().getEntityVertexConsumers();
 
-                // Face world origin (bearing-based, independent of camera)
+            List<Entry> sorted = new ArrayList<>(ENTRIES);
+            sorted.sort((a, b) -> Double.compare(
+                    camPos.squaredDistanceTo(b.x, b.y, b.z),
+                    camPos.squaredDistanceTo(a.x, a.y, a.z)
+            ));
+
+            for (Entry e : sorted) {
+                Vec3d target = new Vec3d(e.x, e.y, e.z);
                 float yawDeg = (float) Math.toDegrees(Math.atan2(-e.x, -e.z));
-                if (Float.isNaN(yawDeg)) yawDeg = 0f;
+                if (Float.isNaN(yawDeg)) yawDeg = 1f;
 
                 matrices.push();
-                matrices.translate(pos.x - camPos.x, pos.y - camPos.y, pos.z - camPos.z);
-                // Extra 90° so the textured face points at the origin as requested
+                matrices.translate(target.x - camPos.x,target.y  - camPos.y,target.z  - camPos.z);
                 matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-yawDeg - 90f));
+                matrices.scale(e.width, e.height, 1f);
 
-                VertexConsumer vc = ctx.consumers().getBuffer(RenderLayer.getTextSeeThrough(e.texture()));
-                renderQuad(vc, matrices, e.width * scale, e.height * scale, LightmapTextureManager.MAX_LIGHT_COORDINATE);
+                VertexConsumer vc = immediate.getBuffer(customRenderLayer(e.texture()));
+                int BLOCK_LIGHT_LEVEL = mc.player.clientWorld.getLightLevel(LightType.BLOCK, mc.player.getBlockPos());
+                int SKY_LIGHT_LEVEL = mc.player.clientWorld.getLightLevel(LightType.SKY, mc.player.getBlockPos());
+                renderQuad(vc, matrices, 1, 1, LightmapTextureManager.pack(BLOCK_LIGHT_LEVEL, SKY_LIGHT_LEVEL));
 
                 matrices.pop();
             }
+
+            immediate.draw();
+
+            RenderSystem.setProjectionMatrix(savedProj, VertexSorter.BY_DISTANCE);
+            bobbedStack = null;
         });
+    }
+
+    public static void bobView(MatrixStack matrices, float tickDelta) {
+        bobViewInverse(matrices, tickDelta);
+        MinecraftClient mc = MinecraftClient.getInstance();
+        GameRenderer gameRenderer = mc.gameRenderer;
+        if (gameRenderer.getClient().getCameraEntity() instanceof PlayerEntity) {
+            PlayerEntity playerEntity = (PlayerEntity)gameRenderer.getClient().getCameraEntity();
+            float f = playerEntity.horizontalSpeed - playerEntity.prevHorizontalSpeed;
+            float g = -(playerEntity.horizontalSpeed + f * tickDelta);
+            float h = MathHelper.lerp(tickDelta, playerEntity.prevStrideDistance, playerEntity.strideDistance);
+            matrices.translate(MathHelper.sin(g * (float)Math.PI) * h * 0.5F, -Math.abs(MathHelper.cos(g * (float)Math.PI) * h), 0.0F);
+            matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(MathHelper.sin(g * (float)Math.PI) * h * 3.0F));
+            matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(Math.abs(MathHelper.cos(g * (float)Math.PI - 0.2F) * h) * 5.0F));
+        }
+    }
+
+    public static void bobViewInverse(MatrixStack matrices, float tickDelta) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        GameRenderer gameRenderer = mc.gameRenderer;
+        if (gameRenderer.getClient().getCameraEntity() instanceof PlayerEntity) {
+
+            PlayerEntity playerEntity = (PlayerEntity)gameRenderer.getClient().getCameraEntity();
+            float f = playerEntity.horizontalSpeed - playerEntity.prevHorizontalSpeed;
+            float g = -(playerEntity.horizontalSpeed + f * tickDelta);
+            float h = MathHelper.lerp(tickDelta, playerEntity.prevStrideDistance, playerEntity.strideDistance);
+            matrices.translate(MathHelper.sin(g * (float)Math.PI) * h * 0.5F, -Math.abs(MathHelper.cos(g * (float)Math.PI) * h), 0.0F);
+            matrices.multiply(RotationAxis.NEGATIVE_Z.rotationDegrees(MathHelper.sin(g * (float)Math.PI) * h * 3.0F));
+            matrices.multiply(RotationAxis.NEGATIVE_X.rotationDegrees(Math.abs(MathHelper.cos(g * (float)Math.PI - 0.2F) * h) * 5.0F));
+            bobbedStack = matrices;
+        }
     }
 
     /* ---------- render helpers (TEXT_SEE_THROUGH expects POSITION_COLOR_TEXTURE_LIGHT) ---------- */
@@ -87,61 +134,11 @@ public final class DistantStructuresRenderer {
         float bottom = 0f;
         int r = 255, g = 255, b = 255, a = 255;
 
-        vc.vertex(model, -halfW, bottom + height, 0).color(r, g, b, a).texture(0f, 0f).light(light);
+        vc.vertex(model, -halfW, bottom + height, 0).color(r, g, b, a).texture(0f, 0f).light(light).light(0,0);
         vc.vertex(model,  halfW, bottom + height, 0).color(r, g, b, a).texture(1f, 0f).light(light);
         vc.vertex(model,  halfW, bottom,          0).color(r, g, b, a).texture(1f, 1f).light(light);
         vc.vertex(model, -halfW, bottom,          0).color(r, g, b, a).texture(0f, 1f).light(light);
     }
-
-    /* ---------- projection helpers (no crosshair pinning) ---------- */
-
-    /**
-     * If the billboard center would exceed the far plane, move it along the cam→target ray
-     * so its center is just inside the far plane by a conservative margin (half diagonal).
-     * Otherwise, leave it at the true world position. Never pushes along camera forward
-     * unless that is actually the target direction; this avoids “sticking to crosshair.”
-     */
-    private static Vec3d projectToFrustumFar(Vec3d camPos, float camYaw, float camPitch,
-                                             Vec3d targetWorld, float spriteW, float spriteH,
-                                             double farBlocks) {
-        Vec3d to = targetWorld.subtract(camPos);
-        double len = to.length();
-        if (len < 1e-6) return targetWorld;
-
-        Vec3d d = to.multiply(1.0 / len);            // direction cam -> target
-        Vec3d fwd = Vec3d.fromPolar(camPitch, camYaw); // camera forward (unit, degrees input)
-        double cos = d.dotProduct(fwd);
-
-        // If target is at/behind perpendicular wrt camera forward, don't try to clamp: keep world anchored
-        if (cos <= 1e-6) return targetWorld;
-
-        // Distance of center along the camera forward axis
-        double forwardDist = len * cos;
-
-        // Margin so the whole quad fits inside the far plane (half of the diagonal + small cushion)
-        double halfDiag = 0.5 * Math.hypot(spriteW, spriteH);
-        double margin   = Math.max(2.0, halfDiag + 1.0);
-
-        // Already safely within far plane
-        if (forwardDist <= farBlocks - margin) return targetWorld;
-
-        // Bring center just inside far plane accounting for the margin
-        double t = (farBlocks - margin) / cos;       // distance along d
-        t = Math.max(0.0, Math.min(len, t));         // clamp to [0, len]
-        return camPos.add(d.multiply(t));
-    }
-
-    /** Approximate far plane in blocks from current render distance. */
-    private static double computeFarPlaneBlocks() {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        try {
-            if (mc != null && mc.options != null) {
-                // view distance (chunks) * 16 blocks/chunk
-                return mc.options.getClampedViewDistance() * 16.0;
-            }
-        } catch (Throwable ignored) {}
-        return 256.0;
-        }
 
     /* ---------- config ---------- */
 
@@ -198,5 +195,25 @@ public final class DistantStructuresRenderer {
             Identifier tex = Identifier.of("karma-gate-mod", "structures/" + names[i]);
             list.add(new Entry(tex, x, y, z, 96f, 128f, true, true));
         }
+    }
+
+    public static RenderLayer customRenderLayer(Identifier texture) {
+        return RenderLayer.of(
+                "text_see_through",
+                VertexFormats.POSITION_COLOR_TEXTURE_LIGHT,
+                VertexFormat.DrawMode.QUADS,
+                1536,
+                false,
+                true,
+                RenderLayer.MultiPhaseParameters.builder()
+                        .program(POSITION_COLOR_TEXTURE_LIGHTMAP_PROGRAM)
+                        .texture(new RenderPhase.Texture(texture, false, true))
+                        .transparency(TRANSLUCENT_TRANSPARENCY)
+                        .cull(RenderPhase.DISABLE_CULLING)
+                        .lightmap(ENABLE_LIGHTMAP)
+                        .depthTest(LEQUAL_DEPTH_TEST)
+                        .writeMaskState(ALL_MASK)
+                        .build(false)
+        );
     }
 }

@@ -30,6 +30,8 @@ loom {
 		}
 	}
 
+	accessWidenerPath = file("src/main/resources/karma-gate-mod.accesswidener")
+
 }
 
 dependencies {
