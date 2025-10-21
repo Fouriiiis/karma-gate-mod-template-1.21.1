@@ -59,8 +59,13 @@ public final class DistantStructuresRenderer {
                 .transpose()                     // world -> camera (inverse)
                 .translate((float) -camPos.x, (float) -camPos.y, (float) -camPos.z);
 
-        // ModelView stack primed with VIEW so subsequent model transforms are world-anchored
+        // ModelView stack; IMPORTANT: apply vanilla bobbing BEFORE we apply the camera view
         MatrixStack matrices = new MatrixStack();
+        if (mc.options.getBobView().getValue()) {
+            // This matches how the world matrix gets a subtle sway so geometry appears to bob.
+            mc.gameRenderer.bobView(matrices, tickDelta);
+        }
+        // Now multiply in our VIEW so subsequent model transforms are world-anchored (and bobbed)
         matrices.peek().getPositionMatrix().mul(view);
 
         // Extended projection so far objects aren't clipped (Iris already finished its pass)
@@ -103,7 +108,7 @@ public final class DistantStructuresRenderer {
             if (Float.isNaN(yawRad)) yawRad = 0f;
 
             matrices.push();
-            // Translate by WORLD coordinates (view is already applied to the stack)
+            // Translate by WORLD coordinates (view is already applied to the stack and includes bobbing)
             matrices.translate((float) place.x, (float) place.y, (float) place.z);
             matrices.multiply(RotationAxis.POSITIVE_Y.rotation(yawRad));
             matrices.scale(e.width, e.height, 1f);
