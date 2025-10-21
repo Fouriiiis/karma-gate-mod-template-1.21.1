@@ -42,7 +42,7 @@ public final class DistantStructuresRenderer {
     private DistantStructuresRenderer() {}
 
     public static void init() {
-        WorldRenderEvents.BEFORE_ENTITIES.register(ctx -> {
+        WorldRenderEvents.LAST.register(ctx -> {
             ensureLoaded();
             if (ENTRIES.isEmpty() || ctx.consumers() == null || ctx.camera() == null) return;
 
@@ -69,19 +69,40 @@ public final class DistantStructuresRenderer {
             ));
 
             for (Entry e : sorted) {
+                // World-space target and camera-relative vector
                 Vec3d target = new Vec3d(e.x, e.y, e.z);
-                float yawDeg = (float) Math.toDegrees(Math.atan2(-e.x, -e.z));
-                if (Float.isNaN(yawDeg)) yawDeg = 1f;
+                Vec3d rel = target.subtract(camPos);
+                // If marked alwaysVisible, clamp to just inside the extended far plane so it never gets clipped
+                if (e.alwaysVisible) {
+                    double dist = rel.length();
+                    double maxDist = Math.max(1.0, far * 0.98);
+                    if (dist > maxDist) {
+                        rel = rel.normalize().multiply(maxDist);
+                    }
+                }
+                // Billboard yaw so the quad faces the camera (around Y axis)
+                float yawRad = (float) Math.atan2(-rel.x, -rel.z);
+                if (Float.isNaN(yawRad)) yawRad = 0f;
 
                 matrices.push();
-                matrices.translate(target.x - camPos.x,target.y  - camPos.y,target.z  - camPos.z);
-                matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-yawDeg - 90f));
+                matrices.translate(rel.x, rel.y, rel.z);
+                matrices.multiply(RotationAxis.POSITIVE_Y.rotation(yawRad));
                 matrices.scale(e.width, e.height, 1f);
 
                 VertexConsumer vc = immediate.getBuffer(customRenderLayer(e.texture()));
-                int BLOCK_LIGHT_LEVEL = mc.player.clientWorld.getLightLevel(LightType.BLOCK, mc.player.getBlockPos());
-                int SKY_LIGHT_LEVEL = mc.player.clientWorld.getLightLevel(LightType.SKY, mc.player.getBlockPos());
-                renderQuad(vc, matrices, 1, 1, LightmapTextureManager.pack(BLOCK_LIGHT_LEVEL, SKY_LIGHT_LEVEL));
+                int packedLight;
+                if (e.emissive) {
+                    packedLight = LightmapTextureManager.pack(15, 15);
+                } else {
+                    var world = mc.world;
+                    int bx = MathHelper.floor(target.x);
+                    int by = MathHelper.floor(target.y);
+                    int bz = MathHelper.floor(target.z);
+                    int block = world != null ? world.getLightLevel(LightType.BLOCK, new net.minecraft.util.math.BlockPos(bx, by, bz)) : 15;
+                    int sky   = world != null ? world.getLightLevel(LightType.SKY,   new net.minecraft.util.math.BlockPos(bx, by, bz)) : 15;
+                    packedLight = LightmapTextureManager.pack(block, sky);
+                }
+                renderQuad(vc, matrices, 1, 1, packedLight);
 
                 matrices.pop();
             }
@@ -134,7 +155,7 @@ public final class DistantStructuresRenderer {
         float bottom = 0f;
         int r = 255, g = 255, b = 255, a = 255;
 
-        vc.vertex(model, -halfW, bottom + height, 0).color(r, g, b, a).texture(0f, 0f).light(light).light(0,0);
+        vc.vertex(model, -halfW, bottom + height, 0).color(r, g, b, a).texture(0f, 0f).light(light);
         vc.vertex(model,  halfW, bottom + height, 0).color(r, g, b, a).texture(1f, 0f).light(light);
         vc.vertex(model,  halfW, bottom,          0).color(r, g, b, a).texture(1f, 1f).light(light);
         vc.vertex(model, -halfW, bottom,          0).color(r, g, b, a).texture(0f, 1f).light(light);
