@@ -52,28 +52,30 @@ public final class DistantStructuresRenderer {
 
         MinecraftClient mc = MinecraftClient.getInstance();
 
-        // Build VIEW = R^{-1} * T(-camPos)  (inverse rotation = transpose for orthonormal rotation)
+        // Build VIEW = R^{-1} * T(-camPos)
         Vec3d camPos = camera.getPos();
         Matrix4f view = new Matrix4f()
-                .rotation(camera.getRotation())  // camera -> world
-                .transpose()                     // world -> camera (inverse)
+                .rotation(camera.getRotation())
+                .transpose()
                 .translate((float) -camPos.x, (float) -camPos.y, (float) -camPos.z);
 
-        // ModelView stack; IMPORTANT: apply vanilla bobbing BEFORE we apply the camera view
+        // Apply vanilla bobbing BEFORE the view, via accessor
         MatrixStack matrices = new MatrixStack();
         if (mc.options.getBobView().getValue()) {
-            // This matches how the world matrix gets a subtle sway so geometry appears to bob.
-            mc.gameRenderer.bobView(matrices, tickDelta);
+            ((dev.fouriis.karmagate.mixin.client.GameRendererAccessor) mc.gameRenderer)
+                    .karmaGate$invokeBobView(matrices, tickDelta);
         }
-        // Now multiply in our VIEW so subsequent model transforms are world-anchored (and bobbed)
         matrices.peek().getPositionMatrix().mul(view);
 
-        // Extended projection so far objects aren't clipped (Iris already finished its pass)
-        double fov = mc.gameRenderer.getFov(camera, tickDelta, true);
+        // ---- Dynamic FOV (exact, from engine) + extended far plane
+        double dynFovDeg = ((dev.fouriis.karmagate.mixin.client.GameRendererAccessor) mc.gameRenderer)
+                .karmaGate$invokeGetFov(camera, tickDelta, true);
+        float fovRad = (float) Math.toRadians(dynFovDeg);
+
         float aspect = (float) mc.getWindow().getFramebufferWidth() / Math.max(1, mc.getWindow().getFramebufferHeight());
         float near = 0.0001f;
-        float far = (float) (mc.options.getClampedViewDistance() * 16.0 * 100.0);
-        Matrix4f extendedProj = new Matrix4f().setPerspective((float) Math.toRadians(fov), aspect, near, far);
+        float far  = (float) (mc.options.getClampedViewDistance() * 16.0 * 100.0); // extend far
+        Matrix4f extendedProj = new Matrix4f().setPerspective(fovRad, aspect, near, far);
 
         Matrix4f savedProj = new Matrix4f(RenderSystem.getProjectionMatrix());
         RenderSystem.setProjectionMatrix(extendedProj, VertexSorter.BY_DISTANCE);
@@ -88,10 +90,9 @@ public final class DistantStructuresRenderer {
         ));
 
         for (Entry e : sorted) {
-            // World-space target
             Vec3d target = new Vec3d(e.x, e.y, e.z);
 
-            // Camera-relative vector for yaw & (optional) far clamp
+            // Camera-relative vector for yaw & optional far clamp
             Vec3d rel = target.subtract(camPos);
             Vec3d place = target;
             if (e.alwaysVisible) {
@@ -99,16 +100,15 @@ public final class DistantStructuresRenderer {
                 double maxDist = Math.max(1.0, far * 0.98);
                 if (dist > maxDist) {
                     rel = rel.normalize().multiply(maxDist);
-                    place = camPos.add(rel); // clamp along view ray, but keep world anchoring
+                    place = camPos.add(rel);
                 }
             }
 
-            // Face the camera around Y (classic upright billboard)
+            // Face the camera around Y (upright billboard)
             float yawRad = (float) Math.atan2(-rel.x, -rel.z);
             if (Float.isNaN(yawRad)) yawRad = 0f;
 
             matrices.push();
-            // Translate by WORLD coordinates (view is already applied to the stack and includes bobbing)
             matrices.translate((float) place.x, (float) place.y, (float) place.z);
             matrices.multiply(RotationAxis.POSITIVE_Y.rotation(yawRad));
             matrices.scale(e.width, e.height, 1f);
@@ -140,7 +140,6 @@ public final class DistantStructuresRenderer {
        PRIVATE: render helpers
        ---------------------------------------------------------------------- */
 
-    // POSITION_COLOR_TEXTURE_LIGHT
     private static void renderQuad(VertexConsumer vc, MatrixStack matrices, float width, float height, int light) {
         MatrixStack.Entry me = matrices.peek();
         Matrix4f model = me.getPositionMatrix();

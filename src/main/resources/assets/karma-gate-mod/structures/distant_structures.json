@@ -4,10 +4,10 @@
   { "texture": "karma-gate-mod:structures/atc_spire2.png", "x": 0,     "y": 160, "z": 6000,  "width": 96,    "height": 128},
   { "texture": "karma-gate-mod:structures/atc_spire3.png", "x": -6000, "y": 160, "z": 0,     "width": 96,    "height": 128},
   { "texture": "karma-gate-mod:structures/atc_spire4.png", "x": 0,     "y": 160, "z": -6000, "width": 96,    "height": 128},
-  { "texture": "karma-gate-mod:structures/atc_structure1.png", "x": 1700,  "y": 0, "z": 1700,  "width": 2000, "height": 1400},
-  { "texture": "karma-gate-mod:structures/atc_structure2.png", "x": -1700, "y": 0, "z": 1700,  "width": 2000, "height": 1400},
-  { "texture": "karma-gate-mod:structures/atc_structure3.png", "x": -1700, "y": 0, "z": -1700, "width": 2000, "height": 1400},
-  { "texture": "karma-gate-mod:structures/atc_structure4.png", "x": 1700,  "y": 0, "z": -1700, "width": 2000, "height": 1400},
-  { "texture": "karma-gate-mod:structures/atc_structure5.png", "x": 1200,  "y": 0, "z": 2000,  "width": 2000, "height": 1400},
-  { "texture": "karma-gate-mod:structures/atc_structure6.png", "x": -120, "y": 0, "z": 2000,  "width": 2000, "height": 1400}
+  { "texture": "karma-gate-mod:structures/atc_structure1.png", "x": 1700,  "y": 87, "z": 1700,  "width": 2000, "height": 1400},
+  { "texture": "karma-gate-mod:structures/atc_structure2.png", "x": -1700, "y": 87, "z": 1700,  "width": 2000, "height": 1400},
+  { "texture": "karma-gate-mod:structures/atc_structure3.png", "x": -1700, "y": 87, "z": -1700, "width": 2000, "height": 1400},
+  { "texture": "karma-gate-mod:structures/atc_structure4.png", "x": 1700,  "y": 87, "z": -1700, "width": 2000, "height": 1400},
+  { "texture": "karma-gate-mod:structures/atc_structure5.png", "x": 1200,  "y": 87, "z": 2000,  "width": 2000, "height": 1400},
+  { "texture": "karma-gate-mod:structures/atc_structure6.png", "x": -120, "y": 87, "z": 2000,  "width": 2000, "height": 1400}
 ]
