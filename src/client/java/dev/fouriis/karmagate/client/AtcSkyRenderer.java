@@ -4,9 +4,12 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.systems.VertexSorter;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.*;
+import net.minecraft.client.render.RenderPhase.Texture;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.MathHelper;
-import net.minecraft.client.render.Camera;
+import net.minecraft.util.math.Vec3d;
+import net.minecraft.client.util.math.MatrixStack;
+
 import org.joml.*;
 import java.lang.Math;
 
@@ -30,6 +33,20 @@ public final class AtcSkyRenderer {
     public static void renderSkybox(Matrix4f modelView, Matrix4f projection, float tickDelta, Camera camera) {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.world == null || camera == null) return;
+
+        Vec3d camPos = camera.getPos();
+        Matrix4f view = new Matrix4f()
+                .rotation(camera.getRotation())
+                .transpose()
+                .translate((float) -camPos.x, (float) -camPos.y, (float) -camPos.z);
+
+        // Add bobbing effect
+        MatrixStack matrices = new MatrixStack();
+        if (mc.options.getBobView().getValue()) {
+            ((dev.fouriis.karmagate.mixin.client.GameRendererAccessor) mc.gameRenderer)
+                    .karmaGate$invokeBobView(matrices, tickDelta);
+        }
+        matrices.peek().getPositionMatrix().mul(view);
 
         // ---- Time-based weights (noon=+1, midnight=-1) ----
         float angle = mc.world.getSkyAngle(tickDelta);
