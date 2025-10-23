@@ -1,5 +1,6 @@
 package dev.fouriis.karmagate;
 
+import dev.fouriis.karmagate.client.AtcSkyFabricAdapter;
 import dev.fouriis.karmagate.entity.ModBlockEntities;
 import dev.fouriis.karmagate.entity.client.GateLightBlockRenderer;
 import dev.fouriis.karmagate.entity.client.HeatCoilRenderer;
@@ -25,8 +26,11 @@ import net.fabricmc.fabric.api.client.particle.v1.ParticleFactoryRegistry;
 import net.minecraft.client.render.block.entity.BlockEntityRendererFactories;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.World;
 import net.minecraft.client.MinecraftClient;
 import net.fabricmc.fabric.api.client.rendering.v1.BuiltinItemRendererRegistry;
+import net.fabricmc.fabric.api.client.rendering.v1.DimensionRenderingRegistry;
+
 import java.util.Map;
 import java.util.HashMap;
 import dev.fouriis.karmagate.entity.karmagate.WaterStreamBlockEntity;
@@ -54,6 +58,8 @@ public class KarmaGateModClient implements ClientModInitializer {
 			dev.fouriis.karmagate.block.ModBlocks.KARMA_GATE.asItem(),
 			(stack, mode, matrices, vertexConsumers, light, overlay) -> gateItemRenderer.render(stack, mode, matrices, vertexConsumers, light, overlay)
 		);
+
+		DimensionRenderingRegistry.registerSkyRenderer(World.OVERWORLD, AtcSkyFabricAdapter::render);
 
 		// Heat Coil item renderer (simple small centered)
 		var heatCoilItemRenderer = new GeoItemRenderer<>(new HeatCoilItemModel());

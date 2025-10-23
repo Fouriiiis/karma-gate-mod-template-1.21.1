@@ -5,8 +5,7 @@
 	"client": [
 		"ExampleClientMixin",
 		"GameRendererMixin",
-		"GameRendererAccessor",
-		"WorldRendererMixin_Sky"
+		"GameRendererAccessor"
 	],
 	"injectors": {
 		"defaultRequire": 1
