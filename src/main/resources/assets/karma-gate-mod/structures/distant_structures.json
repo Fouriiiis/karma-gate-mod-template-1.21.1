@@ -88,5 +88,6 @@
 { "texture": "karma-gate-mod:structures/atc_structure3.png", "x": 310.219, "y": 530.382, "z": 38600.1602, "width": 2000, "height": 1400},
 { "texture": "karma-gate-mod:structures/atc_structure4.png", "x": 140000.888, "y": 530.652, "z": -15190.936, "width": 2000, "height": 1400},
 { "texture": "karma-gate-mod:structures/atc_structure5.png", "x": 7150.763, "y": 560.065, "z": 23610.952, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure6.png", "x": 26090.575, "y": 550.725, "z": 12850.982, "width": 2000, "height": 1400}
+{ "texture": "karma-gate-mod:structures/atc_structure6.png", "x": 26090.575, "y": 550.725, "z": 12850.982, "width": 2000, "height": 1400},
+{ "texture": "karma-gate-mod:structures/benjamin.png", "x": 26090.575, "y": 550.725, "z": -12850.982, "width": 296, "height": 636}
 ]

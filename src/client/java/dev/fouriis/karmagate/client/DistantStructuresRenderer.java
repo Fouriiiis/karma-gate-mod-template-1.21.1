@@ -497,7 +497,7 @@ public final class DistantStructuresRenderer {
     private static void autoGenerateEntries(List<Entry> list) {
         String[] names = {
                 "atc_spire1.png","atc_spire2.png","atc_spire3.png","atc_spire4.png","atc_spire5.png","atc_spire6.png","atc_spire7.png","atc_spire8.png","atc_spire9.png",
-                "atc_structure1.png","atc_structure2.png","atc_structure3.png","atc_structure4.png","atc_structure5.png","atc_structure6.png"
+                "atc_structure1.png","atc_structure2.png","atc_structure3.png","atc_structure4.png","atc_structure5.png","atc_structure6.png", "benjamin.png"
         };
         double radius = 3000.0, y = 160.0;
         for (int i = 0; i < names.length; i++) {
