@@ -5,6 +5,7 @@ import dev.fouriis.karmagate.block.ModBlocks;
 import dev.fouriis.karmagate.block.karmagate.KarmaGatePartBlock;
 import dev.fouriis.karmagate.entity.karmagate.KarmaGateBlockEntity;
 import dev.fouriis.karmagate.entity.karmagate.WaterStreamBlockEntity;
+import dev.fouriis.karmagate.entity.shelterdoor.ShelterDoorBlockEntity;
 import dev.fouriis.karmagate.entity.hologram.HologramProjectorBlockEntity;
 import dev.fouriis.karmagate.entity.karmagate.GateLightBlockEntity;
 import dev.fouriis.karmagate.entity.karmagate.HeatCoilBlockEntity;
@@ -21,6 +22,10 @@ public class ModBlockEntities {
     public static final BlockEntityType<KarmaGateBlockEntity> KARMA_GATE_BLOCK_ENTITY =
         Registry.register(Registries.BLOCK_ENTITY_TYPE, Identifier.of(KarmaGateMod.MOD_ID, "karma_gate_block_entity"),
             FabricBlockEntityTypeBuilder.create(KarmaGateBlockEntity::new, ModBlocks.KARMA_GATE).build());
+
+    public static final BlockEntityType<ShelterDoorBlockEntity> SHELTER_DOOR_BLOCK_ENTITY =
+        Registry.register(Registries.BLOCK_ENTITY_TYPE, Identifier.of(KarmaGateMod.MOD_ID, "shelter_door_block_entity"),
+            FabricBlockEntityTypeBuilder.create(ShelterDoorBlockEntity::new, ModBlocks.SHELTER_DOOR).build());
 
     public static final BlockEntityType<GateLightBlockEntity> GATE_LIGHT_BLOCK_ENTITY =
         Registry.register(Registries.BLOCK_ENTITY_TYPE, Identifier.of(KarmaGateMod.MOD_ID, "gate_light_block_entity"),

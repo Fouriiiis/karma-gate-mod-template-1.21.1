@@ -1,16 +1,26 @@
+// dev/fouriis/karmagate/client/AtcSkyRenderer.java
 package dev.fouriis.karmagate.client;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.systems.VertexSorter;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.*;
-import net.minecraft.client.render.RenderPhase.Texture;
+import net.minecraft.client.render.BackgroundRenderer;
+import net.minecraft.client.render.Camera;
+import net.minecraft.client.render.LightmapTextureManager;
+import net.minecraft.client.render.RenderLayer;
+import net.minecraft.client.render.RenderPhase;
+import net.minecraft.client.render.VertexConsumer;
+import net.minecraft.client.render.VertexConsumerProvider;
+import net.minecraft.client.render.VertexFormat;
+import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
-import org.joml.*;
-import java.lang.Math;
+import org.joml.Matrix4f;
+import org.joml.Matrix4fStack;
+import org.joml.Vector3f;
+import org.joml.Vector4f;
 
 import static net.minecraft.client.render.RenderPhase.*;
 
@@ -20,14 +30,31 @@ public final class AtcSkyRenderer {
     private static final Identifier DUSK  = Identifier.of("karma-gate-mod", "sky/atc_dusksky.png");
 
     private static final int GRID = 64;
-private static final int FULLBRIGHT = LightmapTextureManager.pack(15, 15);
+    @SuppressWarnings("unused")
+    private static final int FULLBRIGHT = LightmapTextureManager.pack(15, 15);
+
+    // ---- Height fade thresholds (camera Y) ----
+    private static float SKY_BOTTOM_Y = 1185f;  // not visible below this Y
+    private static float SKY_TOP_Y    = 1350f;  // fully visible at/above this Y
+
+    /** Optionally call to adjust at runtime. */
+    public static void setSkyHeightFade(float bottomY, float topY) {
+        SKY_BOTTOM_Y = bottomY;
+        SKY_TOP_Y = topY;
+    }
+
     private AtcSkyRenderer() {}
 
     public static void renderSkybox(Matrix4f modelView, Matrix4f projection, float tickDelta, Camera camera) {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.world == null || camera == null) return;
 
-        // (unchanged) compute weights...
+        // ---- height-based visibility from camera Y ----
+        float camY = (float) camera.getPos().y;
+        float heightVis = smooth01(remapClamp(camY, SKY_BOTTOM_Y, SKY_TOP_Y));
+        if (heightVis <= 0.001f) return; // entirely hidden
+
+        // ---- time-based weights (unchanged) ----
         float angle = mc.world.getSkyAngle(tickDelta);
         float sunHeight = MathHelper.cos(angle * ((float)Math.PI * 2f));
         float dayRamp   = smooth01(remapClamp(sunHeight,  0.00f, 0.35f));
@@ -38,10 +65,28 @@ private static final int FULLBRIGHT = LightmapTextureManager.pack(15, 15);
         float wNg  = sum > 0f ? nightRamp / sum : 0f;
         float wDk  = sum > 0f ? duskCore  / sum : 0f;
 
-        // IMPORTANT: sky fog can be black—clear it before we draw our full-screen mesh
+        // Clear potential black sky fog before drawing our full-screen mesh
         BackgroundRenderer.clearFog();
 
-        // Setup identity MVP to emit clip-space directly
+        // ---- build bobbed VIEW like distant structures do (so they stay in sync) ----
+        Vec3d camPos = camera.getPos();
+        Matrix4f view = new Matrix4f()
+                .rotation(camera.getRotation())
+                .transpose()
+                .translate((float) -camPos.x, (float) -camPos.y, (float) -camPos.z);
+
+        MatrixStack bobStack = new MatrixStack();
+        if (mc.options.getBobView().getValue()) {
+            ((dev.fouriis.karmagate.mixin.client.GameRendererAccessor) mc.gameRenderer)
+                    .karmaGate$invokeBobView(bobStack, tickDelta);
+        }
+        bobStack.peek().getPositionMatrix().mul(view);
+
+        // Bobbed view matrix and its inverse (for transforming view rays to world)
+        Matrix4f viewBob    = new Matrix4f(bobStack.peek().getPositionMatrix());
+        Matrix4f invViewBob = new Matrix4f(viewBob).invert();
+
+        // ---- identity MVP so we can emit clip-space vertices directly ----
         Matrix4f savedProj = new Matrix4f(RenderSystem.getProjectionMatrix());
         Matrix4fStack mvStack = RenderSystem.getModelViewStack();
         mvStack.pushMatrix();
@@ -51,94 +96,93 @@ private static final int FULLBRIGHT = LightmapTextureManager.pack(15, 15);
         RenderSystem.applyModelViewMatrix();
         RenderSystem.setProjectionMatrix(new Matrix4f().identity(), VertexSorter.BY_DISTANCE);
 
-        // Precompute transforms for UV lookup
+        // Clip->view inverse projection (to make view-space rays)
         Matrix4f invProj = new Matrix4f(projection).invert();
-        Quaternionf camRot = camera.getRotation();
 
-        if (wDay > 0.004f)  drawSkyGrid(DAY,   wDay, invProj, camRot);
-        if (wDk  > 0.004f)  drawSkyGrid(DUSK,  wDk,  invProj, camRot);
-        if (wNg  > 0.004f)  drawSkyGrid(NIGHT, wNg,  invProj, camRot);
+        // Multiply each layer’s alpha by heightVis
+        if (wDay > 0.004f)  drawSkyGrid(DAY,   wDay * heightVis, invProj, invViewBob);
+        if (wDk  > 0.004f)  drawSkyGrid(DUSK,  wDk  * heightVis, invProj, invViewBob);
+        if (wNg  > 0.004f)  drawSkyGrid(NIGHT, wNg  * heightVis, invProj, invViewBob);
 
-        // Restore
+        // Restore matrices
         mvStack.set(savedMV);
         mvStack.popMatrix();
         RenderSystem.applyModelViewMatrix();
         RenderSystem.setProjectionMatrix(savedProj, VertexSorter.BY_DISTANCE);
     }
 
-    private static void drawSkyGrid(Identifier tex, float alpha, Matrix4f invProj, Quaternionf camRot) {
-    MinecraftClient mc = MinecraftClient.getInstance();
-    VertexConsumerProvider.Immediate immediate = mc.getBufferBuilders().getEntityVertexConsumers();
-    VertexConsumer vc = immediate.getBuffer(skyLayer(tex));
+    private static void drawSkyGrid(Identifier tex, float alpha, Matrix4f invProj, Matrix4f invViewBob) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        VertexConsumerProvider.Immediate immediate = mc.getBufferBuilders().getEntityVertexConsumers();
+        VertexConsumer vc = immediate.getBuffer(skyLayer(tex));
 
-    // drive layer opacity here (uniform), since POSITION_TEXTURE has no vertex color
-    float clampedA = MathHelper.clamp(alpha, 0f, 1f);
-    RenderSystem.setShaderColor(1f, 1f, 1f, clampedA);
+        // opacity driven uniformly since POSITION_TEXTURE has no vertex color
+        float clampedA = MathHelper.clamp(alpha, 0f, 1f);
+        RenderSystem.setShaderColor(1f, 1f, 1f, clampedA);
 
-    for (int iy = 0; iy < GRID; iy++) {
-        float y0 = -1f + 2f * (iy    / (float)GRID);
-        float y1 = -1f + 2f * ((iy+1)/ (float)GRID);
+        for (int iy = 0; iy < GRID; iy++) {
+            float y0 = -1f + 2f * (iy    / (float)GRID);
+            float y1 = -1f + 2f * ((iy+1)/ (float)GRID);
 
-        for (int ix = 0; ix < GRID; ix++) {
-            float x0 = -1f + 2f * (ix    / (float)GRID);
-            float x1 = -1f + 2f * ((ix+1)/ (float)GRID);
+            for (int ix = 0; ix < GRID; ix++) {
+                float x0 = -1f + 2f * (ix    / (float)GRID);
+                float x1 = -1f + 2f * ((ix+1)/ (float)GRID);
 
-            Vec2 uva = dirToUV(unprojectRay(x0, y0, invProj, camRot));
-            Vec2 uvb = dirToUV(unprojectRay(x1, y0, invProj, camRot));
-            Vec2 uvc = dirToUV(unprojectRay(x1, y1, invProj, camRot));
-            Vec2 uvd = dirToUV(unprojectRay(x0, y1, invProj, camRot));
+                Vec2 uva = dirToUV(unprojectRay(x0, y0, invProj, invViewBob));
+                Vec2 uvb = dirToUV(unprojectRay(x1, y0, invProj, invViewBob));
+                Vec2 uvc = dirToUV(unprojectRay(x1, y1, invProj, invViewBob));
+                Vec2 uvd = dirToUV(unprojectRay(x0, y1, invProj, invViewBob));
 
-            float umax = Math.max(Math.max(uva.x, uvb.x), Math.max(uvc.x, uvd.x));
-            float umin = Math.min(Math.min(uva.x, uvb.x), Math.min(uvc.x, uvd.x));
-            if (umax - umin > 0.5f) {
-                if (uva.x < 0.5f) uva.x += 1f;
-                if (uvb.x < 0.5f) uvb.x += 1f;
-                if (uvc.x < 0.5f) uvc.x += 1f;
-                if (uvd.x < 0.5f) uvd.x += 1f;
+                float umax = Math.max(Math.max(uva.x, uvb.x), Math.max(uvc.x, uvd.x));
+                float umin = Math.min(Math.min(uva.x, uvb.x), Math.min(uvc.x, uvd.x));
+                if (umax - umin > 0.5f) {
+                    if (uva.x < 0.5f) uva.x += 1f;
+                    if (uvb.x < 0.5f) uvb.x += 1f;
+                    if (uvc.x < 0.5f) uvc.x += 1f;
+                    if (uvd.x < 0.5f) uvd.x += 1f;
+                }
+
+                // Tri 1
+                vc.vertex(x0, y0, 0f).texture(uva.x, uva.y);
+                vc.vertex(x1, y0, 0f).texture(uvb.x, uvb.y);
+                vc.vertex(x1, y1, 0f).texture(uvc.x, uvc.y);
+                // Tri 2
+                vc.vertex(x1, y1, 0f).texture(uvc.x, uvc.y);
+                vc.vertex(x0, y1, 0f).texture(uvd.x, uvd.y);
+                vc.vertex(x0, y0, 0f).texture(uva.x, uva.y);
             }
-
-            // Tri 1
-            vc.vertex(x0, y0, 0f).texture(uva.x, uva.y);
-            vc.vertex(x1, y0, 0f).texture(uvb.x, uvb.y);
-            vc.vertex(x1, y1, 0f).texture(uvc.x, uvc.y);
-            // Tri 2
-            vc.vertex(x1, y1, 0f).texture(uvc.x, uvc.y);
-            vc.vertex(x0, y1, 0f).texture(uvd.x, uvd.y);
-            vc.vertex(x0, y0, 0f).texture(uva.x, uva.y);
         }
+
+        immediate.draw();
+        RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
     }
 
-    immediate.draw();
-
-    // restore for safety
-    RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
-}
-
-
     private static RenderLayer skyLayer(Identifier texture) {
-    return RenderLayer.of(
-            "atc_sky_screen_mesh",
-            VertexFormats.POSITION_TEXTURE,              // no lightmap, no color needed
-            VertexFormat.DrawMode.TRIANGLES,
-            32768,
-            false,
-            true,
-            RenderLayer.MultiPhaseParameters.builder()
-                    .program(POSITION_TEXTURE_PROGRAM)   // this one exists on 1.21.1
-                    .texture(new RenderPhase.Texture(texture, false, false))
-                    .transparency(TRANSLUCENT_TRANSPARENCY)
-                    .cull(DISABLE_CULLING)
-                    .depthTest(ALWAYS_DEPTH_TEST)        // always behind world
-                    .writeMaskState(COLOR_MASK)          // don’t write depth
-                    .build(false)
-    );
+        return RenderLayer.of(
+                "atc_sky_screen_mesh",
+                VertexFormats.POSITION_TEXTURE,
+                VertexFormat.DrawMode.TRIANGLES,
+                32768,
+                false,
+                true,
+                RenderLayer.MultiPhaseParameters.builder()
+                        .program(POSITION_TEXTURE_PROGRAM)
+                        .texture(new RenderPhase.Texture(texture, false, false))
+                        .transparency(TRANSLUCENT_TRANSPARENCY)
+                        .cull(DISABLE_CULLING)
+                        .depthTest(ALWAYS_DEPTH_TEST)   // always behind the world
+                        .writeMaskState(COLOR_MASK)     // don't write depth
+                        .build(false)
+        );
+    }
 
-}
-
-    private static Vector3f unprojectRay(float ndcX, float ndcY, Matrix4f invProj, Quaternionf camRot) {
+    private static Vector3f unprojectRay(float ndcX, float ndcY, Matrix4f invProj, Matrix4f invViewBob) {
+        // clip -> view
         Vector4f p = new Vector4f(ndcX, ndcY, 1f, 1f).mul(invProj);
         Vector3f dirView = new Vector3f(p.x / p.w, p.y / p.w, p.z / p.w).normalize();
-        return camRot.transform(new Vector3f(dirView)).normalize();
+
+        // view (bobbing included) -> world (direction-only transform)
+        return dirView.mulDirection(invViewBob).normalize();
     }
 
     private static Vec2 dirToUV(Vector3f d) {

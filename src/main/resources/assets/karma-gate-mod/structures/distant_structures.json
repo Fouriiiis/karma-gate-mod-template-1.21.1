@@ -1,93 +1,802 @@
 [
-{ "texture": "karma-gate-mod:structures/atc_spire1.png", "x": 27510.621, "y": 550.477, "z": 20600.823, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire2.png", "x": 6660.147, "y": 550.028, "z": 32600.455, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire3.png", "x": 24780.356, "y": 540.139, "z": 32120.944, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire4.png", "x": 8850.887, "y": 570.800, "z": 32990.586, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire5.png", "x": 17550.243, "y": 560.949, "z": -8080.309, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire6.png", "x": 29590.732, "y": 550.405, "z": -24680.096, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire7.png", "x": 630.439, "y": 530.346, "z": 34570.952, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire8.png", "x": 8240.360, "y": 550.330, "z": 6990.982, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire9.png", "x": 9000.956, "y": 550.141, "z": 12510.568, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_structure1.png", "x": 32910.413, "y": 550.652, "z": -8340.584, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure2.png", "x": 35930.2160, "y": 550.297, "z": 6360.691, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure3.png", "x": -21240.781, "y": 50.469, "z": 17630.525, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure4.png", "x": 25230.861, "y": 530.122, "z": -31900.786, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure5.png", "x": -37810.266, "y": 550.638, "z": 10780.528, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure6.png", "x": 36830.225, "y": 530.257, "z": -251600.791, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_spire1.png", "x": -19180.024, "y": 550.882, "z": -22300.323, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire2.png", "x": -24010.877, "y": 560.390, "z": -11300.0160, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire3.png", "x": 140070.694, "y": 550.946, "z": 27590.632, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire4.png", "x": 5520.149, "y": 540.131, "z": 680.707, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire5.png", "x": -13100.879, "y": 540.315, "z": -36290.476, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire6.png", "x": 10680.525, "y": 560.294, "z": 9670.295, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire7.png", "x": -20810.832, "y": 550.728, "z": 10970.698, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire8.png", "x": 12950.799, "y": 550.328, "z": -36200.823, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire9.png", "x": 30660.817, "y": 540.128, "z": -430.280, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_structure1.png", "x": 10630.259, "y": 560.353, "z": -33270.723, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure2.png", "x": -39750.715, "y": 550.170, "z": 25780.333, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure3.png", "x": -31940.196, "y": 550.620, "z": 28270.647, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure4.png", "x": 16060.697, "y": 550.918, "z": 12040.622, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure5.png", "x": 35670.154, "y": 570.459, "z": 35020.731, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure6.png", "x": -9740.040, "y": 550.228, "z": -11580.943, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_spire1.png", "x": 17450.614, "y": 550.723, "z": -12920.189, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire2.png", "x": -160500.492, "y": 540.562, "z": -1750.244, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire3.png", "x": -6810.298, "y": 570.452, "z": -32000.431, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire4.png", "x": -5860.917, "y": 560.409, "z": -15820.6160, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire5.png", "x": -34680.590, "y": 560.499, "z": -33180.1160, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire6.png", "x": 6780.184, "y": 550.462, "z": 14320.466, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire7.png", "x": -34840.382, "y": 560.212, "z": 29040.668, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire8.png", "x": -36580.198, "y": 540.705, "z": 35780.808, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire9.png", "x": 38580.649, "y": 550.565, "z": -28080.951, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_structure1.png", "x": 3210.433, "y": 530.385, "z": -17830.679, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure2.png", "x": -37110.190, "y": 540.459, "z": -28090.232, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure3.png", "x": -44000.785, "y": 530.764, "z": -5740.483, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure4.png", "x": -28050.6160, "y": 570.812, "z": 12460.968, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure5.png", "x": -8290.040, "y": 560.482, "z": 43490.024, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure6.png", "x": 23250.149, "y": 550.518, "z": -8900.234, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_spire1.png", "x": -24490.1608, "y": 560.189, "z": -3980.606, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire2.png", "x": 17390.448, "y": 570.771, "z": 35430.679, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire3.png", "x": 30390.509, "y": 550.838, "z": -38290.672, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire4.png", "x": 39050.930, "y": 550.150, "z": -7950.807, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire5.png", "x": 22940.119, "y": 550.015, "z": 11700.612, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire6.png", "x": 6720.874, "y": 550.125, "z": -39290.426, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire7.png", "x": -27100.895, "y": 570.405, "z": -33430.660, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire8.png", "x": 116050.714, "y": 530.1400, "z": -12990.332, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire9.png", "x": -9030.185, "y": 570.017, "z": -4240.455, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_structure1.png", "x": 27680.273, "y": 550.303, "z": -22670.745, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure2.png", "x": 6570.792, "y": 540.170, "z": -9440.177, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure3.png", "x": 9700.823, "y": 60.137, "z": -15460.970, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure4.png", "x": -8680.356, "y": 550.478, "z": 24500.947, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure5.png", "x": 26400.237, "y": 540.373, "z": -34020.931, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure6.png", "x": -590.1605, "y": 540.645, "z": 29190.423, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_spire1.png", "x": -31100.348, "y": 570.109, "z": 32830.820, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire2.png", "x": -3250.989, "y": 530.462, "z": 37330.721, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire3.png", "x": -28690.658, "y": 550.170, "z": -4410.688, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire4.png", "x": 35770.992, "y": 530.420, "z": 6740.951, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire5.png", "x": -1290.322, "y": 550.038, "z": 19880.308, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire6.png", "x": 5430.138, "y": 570.207, "z": -30740.667, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire7.png", "x": -4060.469, "y": 530.480, "z": 22940.522, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire8.png", "x": 29950.622, "y": 530.302, "z": -29630.977, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire9.png", "x": -8350.157, "y": 560.600, "z": -9880.604, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_structure1.png", "x": -160390.102, "y": 550.733, "z": -10920.230, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure2.png", "x": 12550.467, "y": 540.219, "z": 22690.176, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure3.png", "x": -15420.887, "y": 560.670, "z": 13050.903, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure4.png", "x": 23310.962, "y": 570.593, "z": 27470.624, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure5.png", "x": -34240.5160, "y": 560.879, "z": 331600.213, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure6.png", "x": -31740.373, "y": 560.703, "z": -26240.794, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_spire1.png", "x": 8540.748, "y": 550.954, "z": -250.897, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire2.png", "x": -2450.570, "y": 560.749, "z": -160500.186, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire3.png", "x": -3650.229, "y": 550.457, "z": -25660.399, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire4.png", "x": 34650.142, "y": 550.293, "z": -8170.374, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire5.png", "x": 12300.448, "y": 570.460, "z": 33580.491, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire6.png", "x": 8020.183, "y": 550.291, "z": -18620.319, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire7.png", "x": 18150.628, "y": 570.825, "z": -29280.434, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire8.png", "x": 37230.055, "y": 550.388, "z": -35150.132, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_spire9.png", "x": -3670.955, "y": 570.867, "z": -35800.226, "width": 160, "height": 2160},
-{ "texture": "karma-gate-mod:structures/atc_structure1.png", "x": -6280.756, "y": 550.899, "z": 28140.594, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure2.png", "x": -33650.907, "y": 570.510, "z": -21300.023, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure3.png", "x": 310.219, "y": 530.382, "z": 38600.1602, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure4.png", "x": 140000.888, "y": 530.652, "z": -15190.936, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure5.png", "x": 7150.763, "y": 560.065, "z": 23610.952, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/atc_structure6.png", "x": 26090.575, "y": 550.725, "z": 12850.982, "width": 2000, "height": 1400},
-{ "texture": "karma-gate-mod:structures/benjamin.png", "x": 26090.575, "y": 550.725, "z": -12850.982, "width": 296, "height": 636}
+  {
+    "texture": "karma-gate-mod:structures/atc_spire3.png",
+    "x": 27516.207,
+    "y": 545.234,
+    "z": 20608.234,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire3.png",
+    "x": 6661.474,
+    "y": 550.281,
+    "z": 32604.547,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire4.png",
+    "x": 24783.562,
+    "y": 538.609,
+    "z": 32129.441,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire3.png",
+    "x": 8858.871,
+    "y": 577.996,
+    "z": 32995.863,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire1.png",
+    "x": 17552.426,
+    "y": 569.491,
+    "z": -8083.088,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire3.png",
+    "x": 29597.316,
+    "y": 554.051,
+    "z": -24680.957,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire3.png",
+    "x": 634.386,
+    "y": 533.457,
+    "z": 34579.523,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire1.png",
+    "x": 8243.603,
+    "y": 543.301,
+    "z": 6999.815,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire1.png",
+    "x": 9009.562,
+    "y": 551.408,
+    "z": 12515.675,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure3.png",
+    "x": 32914.133,
+    "y": 546.522,
+    "z": -8345.838,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure3.png",
+    "x": 35932.164,
+    "y": 542.966,
+    "z": 6366.914,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure2.png",
+    "x": -21247.809,
+    "y": 604.689,
+    "z": 17635.25,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure2.png",
+    "x": 18065.959,
+    "y": 531.218,
+    "z": -22790.082,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure3.png",
+    "x": -37812.664,
+    "y": 556.38,
+    "z": 10785.277,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure4.png",
+    "x": 36832.25,
+    "y": 532.566,
+    "z": -25167.906,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire2.png",
+    "x": -19180.24,
+    "y": 548.816,
+    "z": -22303.227,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire2.png",
+    "x": -24018.768,
+    "y": 553.896,
+    "z": -11300.158,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire6.png",
+    "x": 140076.938,
+    "y": 549.461,
+    "z": 27596.316,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire1.png",
+    "x": 5521.485,
+    "y": 541.313,
+    "z": 687.073,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire3.png",
+    "x": -13108.79,
+    "y": 543.147,
+    "z": -36294.762,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire1.png",
+    "x": 10685.25,
+    "y": 562.937,
+    "z": 9672.95,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire2.png",
+    "x": -20818.32,
+    "y": 547.281,
+    "z": 10976.975,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire3.png",
+    "x": 12957.992,
+    "y": 543.279,
+    "z": -36208.227,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire3.png",
+    "x": 30668.168,
+    "y": 541.277,
+    "z": -432.796,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure3.png",
+    "x": 10632.594,
+    "y": 563.533,
+    "z": -33277.234,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure4.png",
+    "x": -39757.152,
+    "y": 551.701,
+    "z": 25783.336,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure4.png",
+    "x": -31941.961,
+    "y": 546.198,
+    "z": 28276.467,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure1.png",
+    "x": 1666.968,
+    "y": 549.177,
+    "z": 12046.223,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure4.png",
+    "x": 35671.535,
+    "y": 574.591,
+    "z": 35027.312,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure1.png",
+    "x": -9740.4,
+    "y": 552.276,
+    "z": -11589.425,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire2.png",
+    "x": 17456.137,
+    "y": 557.232,
+    "z": -12921.893,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire1.png",
+    "x": -16504.92,
+    "y": 545.618,
+    "z": -1752.435,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire3.png",
+    "x": -6812.977,
+    "y": 574.519,
+    "z": -32004.305,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire1.png",
+    "x": -2655.808,
+    "y": 554.882,
+    "z": -4017.547,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire4.png",
+    "x": -34685.902,
+    "y": 564.992,
+    "z": -33181.164,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire1.png",
+    "x": 6781.844,
+    "y": 554.618,
+    "z": 14324.66,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire4.png",
+    "x": -34843.824,
+    "y": 562.12,
+    "z": 29046.684,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire5.png",
+    "x": -36581.977,
+    "y": 537.046,
+    "z": 35788.078,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire4.png",
+    "x": 38586.492,
+    "y": 545.646,
+    "z": -28089.514,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure1.png",
+    "x": 1989.521,
+    "y": 533.851,
+    "z": -8237.256,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure4.png",
+    "x": -37111.906,
+    "y": 544.587,
+    "z": -28092.322,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure4.png",
+    "x": -44007.852,
+    "y": 537.635,
+    "z": -5744.829,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure3.png",
+    "x": -28056.164,
+    "y": 578.116,
+    "z": 12469.68,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure4.png",
+    "x": -8290.402,
+    "y": 564.818,
+    "z": 43490.242,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure2.png",
+    "x": 23251.492,
+    "y": 555.183,
+    "z": -8902.343,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire2.png",
+    "x": -24491.678,
+    "y": 561.89,
+    "z": -3986.059,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire3.png",
+    "x": 17394.484,
+    "y": 577.709,
+    "z": 35436.789,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire4.png",
+    "x": 30395.094,
+    "y": 558.382,
+    "z": -38296.719,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire3.png",
+    "x": 39059.301,
+    "y": 551.495,
+    "z": -7958.066,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire2.png",
+    "x": 22941.191,
+    "y": 550.147,
+    "z": 11706.122,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire3.png",
+    "x": 6728.739,
+    "y": 551.25,
+    "z": -39294.258,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire4.png",
+    "x": -27108.953,
+    "y": 574.047,
+    "z": -33436.598,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire1.png",
+    "x": 11657.14,
+    "y": 531.397,
+    "z": -12993.324,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire1.png",
+    "x": -9031.845,
+    "y": 570.167,
+    "z": -4244.551,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure3.png",
+    "x": -18149.311,
+    "y": 547.033,
+    "z": -30457.959,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure1.png",
+    "x": 6577.915,
+    "y": 541.695,
+    "z": -9441.77,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure1.png",
+    "x": 9708.225,
+    "y": 311.371,
+    "z": -15469.705,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure2.png",
+    "x": -8683.562,
+    "y": 546.782,
+    "z": 24509.473,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure4.png",
+    "x": 26402.365,
+    "y": 543.726,
+    "z": -34029.312,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure3.png",
+    "x": -18097.793,
+    "y": 546.453,
+    "z": 31294.971,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire4.png",
+    "x": -31103.48,
+    "y": 571.087,
+    "z": 32838.199,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire3.png",
+    "x": -3259.891,
+    "y": 534.617,
+    "z": 37337.211,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire2.png",
+    "x": -28696.582,
+    "y": 551.702,
+    "z": -4416.878,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire3.png",
+    "x": 35779.922,
+    "y": 534.203,
+    "z": 6749.511,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire1.png",
+    "x": -1293.218,
+    "y": 550.378,
+    "z": 19883.084,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire3.png",
+    "x": 5431.382,
+    "y": 572.066,
+    "z": -30746.664,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire2.png",
+    "x": -4064.686,
+    "y": 534.8,
+    "z": 22945.223,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire4.png",
+    "x": 29956.219,
+    "y": 533.021,
+    "z": -29639.766,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire1.png",
+    "x": -6836.621,
+    "y": 561.481,
+    "z": -6650.821,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure1.png",
+    "x": -8183.262,
+    "y": 557.33,
+    "z": -5775.642,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure2.png",
+    "x": 12554.668,
+    "y": 542.195,
+    "z": 22691.76,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure2.png",
+    "x": -15428.875,
+    "y": 556.698,
+    "z": 13059.033,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure3.png",
+    "x": 23319.625,
+    "y": 575.926,
+    "z": 27476.234,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure4.png",
+    "x": -34245.16,
+    "y": 568.788,
+    "z": 33162.133,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure2.png",
+    "x": -25422.07,
+    "y": 567.03,
+    "z": -7890.807,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire1.png",
+    "x": 8547.479,
+    "y": 539.54,
+    "z": -258.975,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire1.png",
+    "x": -40.226,
+    "y": 561.225,
+    "z": -5656.771,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire1.png",
+    "x": -981.194,
+    "y": 583.07,
+    "z": -10496.363,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire3.png",
+    "x": 34651.422,
+    "y": 542.929,
+    "z": -8173.744,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire3.png",
+    "x": 12304.483,
+    "y": 574.601,
+    "z": 33584.906,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire2.png",
+    "x": 8021.829,
+    "y": 552.91,
+    "z": -18623.195,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire3.png",
+    "x": 18156.285,
+    "y": 578.248,
+    "z": -29284.344,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire5.png",
+    "x": 37230.551,
+    "y": 543.883,
+    "z": -35151.32,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire3.png",
+    "x": -2614.697,
+    "y": 578.667,
+    "z": -35802.262,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure2.png",
+    "x": -6287.562,
+    "y": 558.991,
+    "z": 28145.939,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure3.png",
+    "x": -33659.07,
+    "y": 575.098,
+    "z": -21300.232,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure3.png",
+    "x": 312.191,
+    "y": 533.822,
+    "z": 38601.617,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure6.png",
+    "x": 140008.883,
+    "y": 536.522,
+    "z": -15199.359,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure2.png",
+    "x": 7157.632,
+    "y": 560.654,
+    "z": 23619.523,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure2.png",
+    "x": 26445.873,
+    "y": 557.246,
+    "z": 9883.78,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire6.png",
+    "x": 1606.579,
+    "y": 550.583,
+    "z": -3729.777,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_spire2.png",
+    "x": 3428.751,
+    "y": 591.225,
+    "z": -5656.771,
+    "width": 160,
+    "height": 2160
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure6.png",
+    "x": 3233.872,
+    "y": 555.183,
+    "z": -21134.379,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure3.png",
+    "x": 4415.365,
+    "y": 553.033,
+    "z": -35556.359,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure4.png",
+    "x": -7198.867,
+    "y": 526.522,
+    "z": -25163.787,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure1.png",
+    "x": -7350.263,
+    "y": 557.33,
+    "z": 6812.136,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure1.png",
+    "x": 9414.708,
+    "y": 557.33,
+    "z": 966.602,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_structure2.png",
+    "x": -25339.789,
+    "y": 557.33,
+    "z": 2740.487,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/benjamin.png",
+    "x": 25339.789,
+    "y": 557.33,
+    "z": -20000.121,
+    "width": 2200,
+    "height": 1400
+  },
+  {
+    "texture": "karma-gate-mod:structures/atc_fivepebbles.png",
+    "x": 0,
+    "y": 560.123,
+    "z": 0,
+    "width": 2200,
+    "height": 1400
+  }
 ]

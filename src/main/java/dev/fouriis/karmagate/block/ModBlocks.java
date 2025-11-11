@@ -7,6 +7,7 @@ import dev.fouriis.karmagate.block.karmagate.SteamEmitterBlock;
 import dev.fouriis.karmagate.block.karmagate.WaterStreamBlock;
 import dev.fouriis.karmagate.block.karmagate.GateLightBlock;
 import dev.fouriis.karmagate.block.karmagate.HeatCoilBlock;
+import dev.fouriis.karmagate.block.shelterdoor.ShelterDoorBlock;
 import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
 import dev.fouriis.karmagate.item.KarmaGateItem;
 import dev.fouriis.karmagate.item.HeatCoilItem;
@@ -49,6 +50,12 @@ public class ModBlocks {
     public static final Block STEAM_EMITTER = registerBlock("steam_emitter",
         new SteamEmitterBlock(Block.Settings.create()
             .strength(3.0f)
+            .sounds(BlockSoundGroup.METAL)
+            .nonOpaque()));
+
+    public static final Block SHELTER_DOOR = registerBlock("shelter_door",
+        new ShelterDoorBlock(Block.Settings.create()
+            .strength(4.0f)
             .sounds(BlockSoundGroup.METAL)
             .nonOpaque()));
 
@@ -97,6 +104,7 @@ public class ModBlocks {
             entries.add(WATER_STREAM);
             entries.add(STEAM_EMITTER);
             entries.add(HOLOGRAM_PROJECTOR);
+            entries.add(SHELTER_DOOR);
         });
     }
 }

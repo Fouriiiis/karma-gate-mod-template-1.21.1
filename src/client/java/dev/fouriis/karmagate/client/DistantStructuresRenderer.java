@@ -1,3 +1,4 @@
+// dev/fouriis/karmagate/client/DistantStructuresRenderer.java
 package dev.fouriis.karmagate.client;
 
 import com.google.gson.*;
@@ -5,6 +6,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.systems.VertexSorter;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.*;
+import net.minecraft.client.render.RenderPhase.Texture;
 import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.resource.Resource;
@@ -34,10 +36,21 @@ public final class DistantStructuresRenderer {
     private static final List<Entry> ENTRIES = new ArrayList<>();
     private static boolean loaded = false;
 
+    // ---- Height fade thresholds (camera Y) ----
+    private static float STRUCT_BOTTOM_Y = 1185f;  // not visible below this Y
+    private static float STRUCT_TOP_Y    = 1350f;  // fully visible at/above this Y
+
+    /** Optionally call to adjust at runtime. */
+    public static void setStructureHeightFade(float bottomY, float topY) {
+        STRUCT_BOTTOM_Y = bottomY;
+        STRUCT_TOP_Y = topY;
+    }
+
     // Emissive overlay textures for the “lightning” glow
     private static final Identifier LIGHT1 = Identifier.of("karma-gate-mod", "structures/atc_light1.png");
     private static final Identifier LIGHT2 = Identifier.of("karma-gate-mod", "structures/atc_light2.png");
     private static final Identifier LIGHT3 = Identifier.of("karma-gate-mod", "structures/atc_light3.png");
+    private static final Identifier LIGHTP = Identifier.of("karma-gate-mod", "structures/atc_fivepebbleslight.png");
 
     // Per-entry lightning state (RW-like)
     private static final Map<Entry, Lightning> LIGHTNING = new ConcurrentHashMap<>();
@@ -66,6 +79,11 @@ public final class DistantStructuresRenderer {
         if (ENTRIES.isEmpty() || camera == null) return;
 
         MinecraftClient mc = MinecraftClient.getInstance();
+
+        // --- Height-based visibility (camera Y) ---
+        float camY = (float) camera.getPos().y;
+        float heightVis = smoothstep(STRUCT_BOTTOM_Y, STRUCT_TOP_Y, camY);
+        if (heightVis <= 0.001f) return; // entirely hidden
 
         // Build VIEW = R^{-1} * T(-camPos)
         Vec3d camPos = camera.getPos();
@@ -114,12 +132,12 @@ public final class DistantStructuresRenderer {
             cr = gray; cg = gray; cb = gray;
         }
 
-        // Night factor goes 0 (bright day) -> 1 (deep night).
+        // Night factor: 0 (day) -> 1 (night)
         float nightFactor = smoothstep(0.65f, 0.15f, ambient01);
 
-        // ---- CHANGE: +50% lightning in the day (adds +0.125 when nightFactor = 0; fades to 0 at night)
+        // +50% daytime boost to lightning; fades at night
         float baseMult = 0.25f + 1.25f * nightFactor;
-        float dayBoostAdd = 0.125f * (1.0f - nightFactor); // +50% of 0.25 at noon, 0 at night
+        float dayBoostAdd = 0.125f * (1.0f - nightFactor);
         float globalGlowMultiplier = MathHelper.clamp(baseMult + dayBoostAdd, 0.25f, 1.5f);
 
         // Back-to-front sort for translucency
@@ -129,10 +147,10 @@ public final class DistantStructuresRenderer {
                 camPos.squaredDistanceTo(a.x, a.y, a.z)
         ));
 
-        // Ticks timeline (precision-safe)
+        // tick timeline (precision-safe)
         long nowTicks = 0L;
         if (mc.world != null) {
-            long base = mc.world.getTime(); // long ticks
+            long base = mc.world.getTime();
             int frac = MathHelper.floor(tickDelta * 20.0f + 0.5f);
             nowTicks = base + frac;
         }
@@ -140,7 +158,7 @@ public final class DistantStructuresRenderer {
         for (Entry e : sorted) {
             Vec3d target = new Vec3d(e.x, e.y, e.z);
 
-            // Camera-relative vector for yaw & optional far clamp
+            // relative vector + optional far clamp
             Vec3d rel = target.subtract(camPos);
             Vec3d place = target;
             if (e.alwaysVisible) {
@@ -176,7 +194,8 @@ public final class DistantStructuresRenderer {
             } else {
                 packedLight = LightmapTextureManager.pack(0, 0);
             }
-            renderQuad(vcBase, matrices, 1f, 1f, packedLight, cr, cg, cb, 255);
+            int baseA = MathHelper.clamp((int)(255f * heightVis), 0, 255);
+            renderQuad(vcBase, matrices, 1f, 1f, packedLight, cr, cg, cb, baseA);
             matrices.pop(); // base scale
 
             // ---- Emissive lightning overlay ----
@@ -184,7 +203,9 @@ public final class DistantStructuresRenderer {
             if (lightTex != null && mc.world != null) {
                 Lightning L = LIGHTNING.computeIfAbsent(e, DistantStructuresRenderer::makeLightning);
                 L.updateTo(nowTicks);
-                L.globalMultiplier = globalGlowMultiplier;
+
+                // fold the height fade into glow as well
+                L.globalMultiplier = globalGlowMultiplier * heightVis;
 
                 float alpha = L.lightIntensity(tickDelta) * 0.50f; // keep clear visibility
                 if (alpha > 0.003f) {
@@ -270,6 +291,7 @@ public final class DistantStructuresRenderer {
         if (p.endsWith("atc_structure1.png")) return LIGHT1;
         if (p.endsWith("atc_structure2.png")) return LIGHT2;
         if (p.endsWith("atc_structure3.png")) return LIGHT3;
+        if (p.endsWith("atc_fivepebbles.png")) return LIGHTP;
         return null;
     }
 
@@ -433,24 +455,27 @@ public final class DistantStructuresRenderer {
     }
 
     private static RenderLayer glowLayer(Identifier texture) {
-        return RenderLayer.of(
-                "karma_gate_billboard_glow",
-                VertexFormats.POSITION_COLOR_TEXTURE_LIGHT,
-                VertexFormat.DrawMode.QUADS,
-                1024,
-                false,
-                true,
-                RenderLayer.MultiPhaseParameters.builder()
-                        .program(POSITION_COLOR_TEXTURE_LIGHTMAP_PROGRAM)
-                        .texture(new Texture(texture, false, true))
-                        .transparency(TRANSLUCENT_TRANSPARENCY)
-                        .cull(DISABLE_CULLING)
-                        .lightmap(ENABLE_LIGHTMAP)   // submit fullbright
-                        .depthTest(LEQUAL_DEPTH_TEST)
-                        .writeMaskState(COLOR_MASK)
-                        .build(false)
-        );
-    }
+    return RenderLayer.of(
+            "karma_gate_billboard_glow",
+            VertexFormats.POSITION_COLOR_TEXTURE_LIGHT,
+            VertexFormat.DrawMode.QUADS,
+            1024,
+            false,
+            true,
+            RenderLayer.MultiPhaseParameters.builder()
+                    .program(POSITION_COLOR_TEXTURE_LIGHTMAP_PROGRAM)
+                    .texture(new Texture(texture, false, true))
+                    .transparency(TRANSLUCENT_TRANSPARENCY)
+                    .cull(DISABLE_CULLING)
+                    .lightmap(ENABLE_LIGHTMAP)
+                    // ✅ Respect world depth (so it doesn’t show through terrain)
+                    .depthTest(LEQUAL_DEPTH_TEST)
+                    // ✅ Don’t write to depth (so clouds & sky remain behind)
+                    .writeMaskState(COLOR_MASK)
+                    .build(false)
+    );
+}
+
 
     /* ----------------------------------------------------------------------
        Config loading
@@ -497,7 +522,7 @@ public final class DistantStructuresRenderer {
     private static void autoGenerateEntries(List<Entry> list) {
         String[] names = {
                 "atc_spire1.png","atc_spire2.png","atc_spire3.png","atc_spire4.png","atc_spire5.png","atc_spire6.png","atc_spire7.png","atc_spire8.png","atc_spire9.png",
-                "atc_structure1.png","atc_structure2.png","atc_structure3.png","atc_structure4.png","atc_structure5.png","atc_structure6.png", "benjamin.png"
+                "atc_structure1.png","atc_structure2.png","atc_structure3.png","atc_structure4.png","atc_structure5.png","atc_structure6.png", "benjamin.png", "atc_fivepebbles.png"
         };
         double radius = 3000.0, y = 160.0;
         for (int i = 0; i < names.length; i++) {

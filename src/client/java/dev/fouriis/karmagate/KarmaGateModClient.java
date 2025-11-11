@@ -5,6 +5,7 @@ import dev.fouriis.karmagate.entity.ModBlockEntities;
 import dev.fouriis.karmagate.entity.client.GateLightBlockRenderer;
 import dev.fouriis.karmagate.entity.client.HeatCoilRenderer;
 import dev.fouriis.karmagate.entity.client.KarmaGateBlockRenderer;
+import dev.fouriis.karmagate.entity.client.ShelterDoorRenderer;
 import dev.fouriis.karmagate.item.KarmaGateItemGeoRenderer;
 import dev.fouriis.karmagate.entity.client.HeatCoilItemModel;
 import dev.fouriis.karmagate.entity.client.GateLightItemModel;
@@ -45,6 +46,7 @@ public class KarmaGateModClient implements ClientModInitializer {
 		
 		// Register block entity renderer
 		BlockEntityRendererFactories.register(ModBlockEntities.KARMA_GATE_BLOCK_ENTITY, KarmaGateBlockRenderer::new);
+		BlockEntityRendererFactories.register(ModBlockEntities.SHELTER_DOOR_BLOCK_ENTITY, ShelterDoorRenderer::new);
 		BlockEntityRendererFactories.register(ModBlockEntities.GATE_LIGHT_BLOCK_ENTITY, GateLightBlockRenderer::new);
 		BlockEntityRendererFactories.register(ModBlockEntities.HEAT_COIL_BLOCK_ENTITY, HeatCoilRenderer::new);
 		BlockEntityRendererFactories.register(ModBlockEntities.HOLOGRAM_PROJECTOR, HologramProjectorRenderer::new);
