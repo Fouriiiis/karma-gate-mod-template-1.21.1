@@ -107,11 +107,7 @@ public class ShelterDoorBlock extends BlockWithEntity {
     public VoxelShape getOutlineShape(BlockState state, BlockView view, BlockPos pos, ShapeContext ctx) {
         // Keep original behavior: show a full cube for creative players so it's easy to select,
         // otherwise become empty when open.
-        if (ctx instanceof net.minecraft.block.EntityShapeContext esc
-                && esc.getEntity() instanceof PlayerEntity p && p.isCreative()) {
-            return VoxelShapes.fullCube();
-        }
-        if (view instanceof World w && isOpen(w, pos)) return VoxelShapes.empty();
+        // Always return a non-empty outline to prevent particle bounding box crashes when breaking
         return VoxelShapes.fullCube();
     }
 

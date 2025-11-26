@@ -30,13 +30,17 @@ public class GateLightBlock extends BlockWithEntity {
     public static final DirectionProperty FACING = Properties.HORIZONTAL_FACING;
     // Emits light when true
     public static final BooleanProperty LIT = Properties.LIT;
+    // When true, the light is considered broken and must never turn on
+    public static final BooleanProperty BROKEN = BooleanProperty.of("broken");
 
     public GateLightBlock(Settings settings) {
-        // Make luminance depend on the LIT property
-        super(settings.luminance(state -> state.contains(LIT) && state.get(LIT) ? 9 : 0));
+        // Make luminance depend on LIT property, but never when BROKEN is true
+        super(settings.luminance(state ->
+                (state.contains(LIT) && state.contains(BROKEN) && state.get(LIT) && !state.get(BROKEN)) ? 9 : 0));
         setDefaultState(getStateManager().getDefaultState()
             .with(FACING, Direction.NORTH)
-            .with(LIT, false));
+            .with(LIT, false)
+            .with(BROKEN, false));
     }
 
     @Override
@@ -46,7 +50,7 @@ public class GateLightBlock extends BlockWithEntity {
 
     @Override
     protected void appendProperties(StateManager.Builder<net.minecraft.block.Block, BlockState> builder) {
-        builder.add(FACING, LIT);
+        builder.add(FACING, LIT, BROKEN);
     }
 
     @Override

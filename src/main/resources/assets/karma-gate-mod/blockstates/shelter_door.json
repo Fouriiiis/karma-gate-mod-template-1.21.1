@@ -1,10 +1,6 @@
 {
   "variants": {
-    "facing=north": { "model": "karma-gate-mod:block/shelter_door", "y": 180 },
-    "facing=south": { "model": "karma-gate-mod:block/shelter_door", "y": 0 },
-    "facing=west":  { "model": "karma-gate-mod:block/shelter_door", "y": 90 },
-    "facing=east":  { "model": "karma-gate-mod:block/shelter_door", "y": 270 },
-    "facing=up":    { "model": "karma-gate-mod:block/shelter_door", "x": 90 },
-    "facing=down":  { "model": "karma-gate-mod:block/shelter_door", "x": 270 }
+    "axis=x": { "model": "karma-gate-mod:block/empty" },
+    "axis=z": { "model": "karma-gate-mod:block/empty" }
   }
 }

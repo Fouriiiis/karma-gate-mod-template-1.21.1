@@ -52,12 +52,21 @@ public class GateLightBlockEntity extends BlockEntity implements GeoBlockEntity 
     /** Server-only setter that syncs state, block light, and animation. */
     public void setLit(boolean value) {
         if (world == null || world.isClient) return;
+        // If the block is broken, it must never be lit
+        BlockState st = world.getBlockState(pos);
+        boolean isBroken = (st.getBlock() instanceof GateLightBlock)
+                && st.contains(GateLightBlock.BROKEN)
+                && st.get(GateLightBlock.BROKEN);
+
+        if (isBroken && value) {
+            value = false; // clamp to off when broken
+        }
+
         if (this.lit == value) return;
 
         this.lit = value;
 
         // Sync the BlockState's LIT property so luminance updates immediately
-        BlockState st = world.getBlockState(pos);
         if (st.getBlock() instanceof GateLightBlock && st.contains(GateLightBlock.LIT)) {
             if (st.get(GateLightBlock.LIT) != value) {
                 world.setBlockState(pos, st.with(GateLightBlock.LIT, value), 3); // notifies + relights
@@ -75,7 +84,15 @@ public class GateLightBlockEntity extends BlockEntity implements GeoBlockEntity 
     public boolean isLit() { return lit; }
 
     public void tick(World world, BlockPos pos, BlockState state, GateLightBlockEntity be) {
-        // no-op
+        // Server-side safety: if the block becomes broken while lit, force it off
+        if (!world.isClient) {
+            if (state.getBlock() instanceof GateLightBlock
+                    && state.contains(GateLightBlock.BROKEN)
+                    && state.get(GateLightBlock.BROKEN)
+                    && this.lit) {
+                setLit(false);
+            }
+        }
     }
 
     // ---------------- GeckoLib ----------------
@@ -128,6 +145,11 @@ public class GateLightBlockEntity extends BlockEntity implements GeoBlockEntity 
         // Keep block state's LIT in sync on both sides (server does real relight)
         if (world != null) {
             BlockState st = world.getBlockState(pos);
+            // If the block state says it's broken, ensure lit is false
+            if (st.getBlock() instanceof GateLightBlock && st.contains(GateLightBlock.BROKEN)
+                    && st.get(GateLightBlock.BROKEN) && this.lit) {
+                this.lit = false;
+            }
             if (st.getBlock() instanceof GateLightBlock && st.contains(GateLightBlock.LIT)
                 && st.get(GateLightBlock.LIT) != lit) {
                 world.setBlockState(pos, st.with(GateLightBlock.LIT, lit), 3);

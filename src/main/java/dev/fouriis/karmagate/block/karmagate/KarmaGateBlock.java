@@ -162,14 +162,8 @@ public class KarmaGateBlock extends BlockWithEntity {
 
     @Override
 public VoxelShape getOutlineShape(BlockState state, BlockView view, BlockPos pos, ShapeContext ctx) {
-    if (ctx instanceof EntityShapeContext esc && esc.getEntity() instanceof PlayerEntity player && player.isCreative()) {
-        // Creative players always see a hitbox
-        return VoxelShapes.fullCube();
-    }
-
-    if (view instanceof World w && isOpen(w, pos)) {
-        return VoxelShapes.empty();
-    }
+    // Keep outline non-empty to avoid client crash in ParticleManager when breaking
+    // Return full cube for selection; collision is handled separately below.
     return VoxelShapes.fullCube();
 }
 

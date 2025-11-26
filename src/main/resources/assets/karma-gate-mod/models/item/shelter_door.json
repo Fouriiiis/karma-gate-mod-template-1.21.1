@@ -1,3 +1,6 @@
 {
-  "parent": "karma-gate-mod:block/shelter_door"
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "karma-gate-mod:block/shelter_texture"
+  }
 }

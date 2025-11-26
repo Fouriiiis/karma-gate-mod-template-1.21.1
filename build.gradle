@@ -13,7 +13,7 @@ base {
 repositories {
 	maven {
 		name = 'GeckoLib'
-		url 'https://dl.cloudsmith.io/public/geckolib3/geckolib/maven/'
+		url = 'https://dl.cloudsmith.io/public/geckolib3/geckolib/maven/'
 		content {
 			includeGroup("software.bernie.geckolib")
 		}
@@ -66,6 +66,12 @@ java {
 
 	sourceCompatibility = JavaVersion.VERSION_21
 	targetCompatibility = JavaVersion.VERSION_21
+
+	// Ensure Gradle uses JDK 21 toolchain even if a newer JDK (e.g. 23) is the current JAVA_HOME.
+	// fabric-loom 1.11-SNAPSHOT requires running on >=21; locking compilation to 21 avoids accidental >21 APIs.
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(21)
+	}
 }
 
 jar {
