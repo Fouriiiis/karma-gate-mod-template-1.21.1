@@ -1150,6 +1150,47 @@
 						}
 					}
 				}
+			},
+			"sound_effects": {
+				"0.0": {
+					"effect": "karma-gate-mod:metalslide"
+				},
+				"2.5417": {
+					"effect": "karma-gate-mod:impacta"
+				},
+				"2.5833": {
+					"effect": "karma-gate-mod:impacta"
+				},
+				"2.625": {
+					"effect": "karma-gate-mod:impacta"
+				},
+				"3.7917": {
+					"effect": "karma-gate-mod:hugeimpact"
+				},
+				"4.3333": {
+					"effect": "karma-gate-mod:impacta"
+				},
+				"4.4583": {
+					"effect": "karma-gate-mod:impacta"
+				},
+				"4.5": {
+					"effect": "karma-gate-mod:impacta"
+				},
+				"4.5833": {
+					"effect": "karma-gate-mod:impacta"
+				},
+				"4.7917": {
+					"effect": "karma-gate-mod:impacta"
+				},
+				"5.0": {
+					"effect": "karma-gate-mod:impacta"
+				},
+				"5.2083": {
+					"effect": "karma-gate-mod:impacta"
+				},
+				"5.625": {
+					"effect": "karma-gate-mod:impacta"
+				}
 			}
 		},
 		"open": {
