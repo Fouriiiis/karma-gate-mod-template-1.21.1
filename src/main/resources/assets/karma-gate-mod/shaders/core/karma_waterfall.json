@@ -1,0 +1,24 @@
+{
+  "blend": { "func": "add", "srcrgb": "src_alpha", "dstrgb": "one_minus_src_alpha" },
+
+  "vertex":   "karma-gate-mod:karma_waterfall",
+  "fragment": "karma-gate-mod:karma_waterfall",
+
+  "attributes": [ "Position", "Color", "UV0" ],
+
+  "samplers": [
+    { "name": "Sampler0" }
+  ],
+
+  "uniforms": [
+    { "name": "ModelViewMat", "type": "matrix4x4", "count": 16, "values": [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1] },
+    { "name": "ProjMat",      "type": "matrix4x4", "count": 16, "values": [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1] },
+    { "name": "GameTime",     "type": "float", "count": 1, "values": [ 0.0 ] },
+
+    { "name": "uSeed",          "type": "float", "count": 1, "values": [ 0.0 ] },
+    { "name": "uScrollSpeed",   "type": "float", "count": 1, "values": [ 0.085 ] },
+    { "name": "uNoiseScale",    "type": "float", "count": 2, "values": [ 11.0, 1.5 ] },
+    { "name": "uSoftness",      "type": "float", "count": 1, "values": [ 0.10 ] },
+    { "name": "uTilesPerBlock", "type": "float", "count": 1, "values": [ 1.25 ] }
+  ]
+}

@@ -5,6 +5,7 @@ import dev.fouriis.karmagate.block.karmagate.KarmaGateBlock;
 import dev.fouriis.karmagate.block.karmagate.KarmaGatePartBlock;
 import dev.fouriis.karmagate.block.karmagate.SteamEmitterBlock;
 import dev.fouriis.karmagate.block.karmagate.WaterStreamBlock;
+import dev.fouriis.karmagate.block.karmagate.WaterfallBlock;
 import dev.fouriis.karmagate.block.karmagate.GateLightBlock;
 import dev.fouriis.karmagate.block.karmagate.HeatCoilBlock;
 import dev.fouriis.karmagate.block.shelterdoor.ShelterDoorBlock;
@@ -46,6 +47,12 @@ public class ModBlocks {
         new WaterStreamBlock(Block.Settings.create()
             .strength(3.0f)
             .sounds(BlockSoundGroup.METAL)
+            .nonOpaque()));
+
+    public static final Block WATERFALL = registerBlock("waterfall",
+        new WaterfallBlock(Block.Settings.create()
+            .strength(0.5f)
+            .sounds(BlockSoundGroup.WET_GRASS)
             .nonOpaque()));
     public static final Block STEAM_EMITTER = registerBlock("steam_emitter",
         new SteamEmitterBlock(Block.Settings.create()
@@ -102,6 +109,7 @@ public class ModBlocks {
             entries.add(GATE_LIGHT);
             entries.add(HEAT_COIL);
             entries.add(WATER_STREAM);
+            entries.add(WATERFALL);
             entries.add(STEAM_EMITTER);
             entries.add(HOLOGRAM_PROJECTOR);
             entries.add(SHELTER_DOOR);

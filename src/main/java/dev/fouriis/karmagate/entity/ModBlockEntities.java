@@ -5,6 +5,7 @@ import dev.fouriis.karmagate.block.ModBlocks;
 import dev.fouriis.karmagate.block.karmagate.KarmaGatePartBlock;
 import dev.fouriis.karmagate.entity.karmagate.KarmaGateBlockEntity;
 import dev.fouriis.karmagate.entity.karmagate.WaterStreamBlockEntity;
+import dev.fouriis.karmagate.entity.karmagate.WaterfallBlockEntity;
 import dev.fouriis.karmagate.entity.shelterdoor.ShelterDoorBlockEntity;
 import dev.fouriis.karmagate.entity.hologram.HologramProjectorBlockEntity;
 import dev.fouriis.karmagate.entity.karmagate.GateLightBlockEntity;
@@ -38,6 +39,10 @@ public class ModBlockEntities {
     public static final BlockEntityType<WaterStreamBlockEntity> WATER_STREAM_BLOCK_ENTITY =
         Registry.register(Registries.BLOCK_ENTITY_TYPE, Identifier.of(KarmaGateMod.MOD_ID, "water_stream_block_entity"),
             FabricBlockEntityTypeBuilder.create(WaterStreamBlockEntity::new, ModBlocks.WATER_STREAM).build());
+
+    public static final BlockEntityType<WaterfallBlockEntity> WATERFALL_BLOCK_ENTITY =
+        Registry.register(Registries.BLOCK_ENTITY_TYPE, Identifier.of(KarmaGateMod.MOD_ID, "waterfall_block_entity"),
+            FabricBlockEntityTypeBuilder.create(WaterfallBlockEntity::new, ModBlocks.WATERFALL).build());
 
     public static final BlockEntityType<KarmaGatePartBlock.PartBE> KARMA_GATE_PART_BE =
         Registry.register(
