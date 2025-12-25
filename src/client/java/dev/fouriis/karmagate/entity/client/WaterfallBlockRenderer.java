@@ -20,18 +20,19 @@ import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
 /**
- * Renders an animated vertical water sheet from the block down to the first solid block.
- * Flow changes propagate from top to bottom via client keyframes.
+ * Optimized waterfall renderer:
+ *  - Uses MathHelper.sin (lookup-table) instead of Math.sin
+ *  - Precomputes per-column (u) terms once per render call
+ *  - Reduces hole decision to a single smoothstep + threshold
+ *  - Adds simple LOD on stripsPerBlock for very tall waterfalls
  */
 public class WaterfallBlockRenderer implements BlockEntityRenderer<WaterfallBlockEntity> {
 
-    // Bare minimum: vanilla translucent water texture.
-    private static final Identifier WATER_TEX = Identifier.of("minecraft", "textures/block/water_still.png");
+    private static final Identifier WATER_TEX = Identifier.of("minecraft", "textures/block/water_flow.png");
 
-    // Visual/Perf tunables
     private static final int MAX_BLOCKS_DOWN = 128;
 
-    // Keep geometry light.
+    // Base geometry knobs (LOD will reduce strips on tall falls)
     private static final int STRIPS_PER_BLOCK = 12;
     private static final int SEGS_X = 32;
     private static final int MAX_QUADS = 60_000;
@@ -39,19 +40,46 @@ public class WaterfallBlockRenderer implements BlockEntityRenderer<WaterfallBloc
     private static final float PLANE_HALF_WIDTH = 0.5f;
     private static final float DEPTH_NUDGE = 0.0015f;
 
-    // Simple pattern motion
-    private static final float SCROLL_BLOCKS_PER_TICK = 0.10f;
+    // ---------------- Pattern controls (no texture noise) ----------------
+    private static final float V_STRETCH = 2.0f / 3.0f;
 
-    // Simple cutout pattern (smooth, no pixel noise)
-    private static final float CUT_FREQ_X = 24.0f;
-    private static final float CUT_FREQ_Y = 1.35f;
-    private static final float CUT_SPEED = 0.90f;
-    private static final float CUT_THRESHOLD0 = 0.78f;
-    private static final float CUT_THRESHOLD1 = 0.88f;
-    private static final float CUT_FEATHER = 0.10f;
+    // NOTE: you currently have extra speed baked in here; keep as-is.
+    private static final float SPEED_MULT = (4.0f / 3.0f) * 2.0f;
 
-    // Texture tiling: how many times the water texture repeats per block of height.
+    private static final float BAND_FREQ_X = 10.0f;
+    private static final float BAND_FREQ_Y = 0.65f * V_STRETCH;
+    private static final float BAND_SPEED  = 0.85f * SPEED_MULT;
+
+    private static final float BAND2_FREQ_X = 18.0f;
+    private static final float BAND2_FREQ_Y = 1.10f * V_STRETCH;
+    private static final float BAND2_SPEED  = 1.10f * SPEED_MULT;
+
+    private static final float FINE_FREQ_X = 36.0f;
+    private static final float FINE_FREQ_Y = 2.40f * V_STRETCH;
+    private static final float FINE_SPEED  = 1.60f * SPEED_MULT;
+
+    private static final float WARP_Y_FREQ = 1.35f * V_STRETCH;
+    private static final float WARP_X_FREQ = 2.20f;
+    private static final float WARP_SPEED  = 0.55f * SPEED_MULT;
+    private static final float WARP_U_STRENGTH = 1.35f;
+    private static final float WARP_V_STRENGTH = 0.55f;
+
+    private static final float RIP_FREQ_X = 6.0f;
+    private static final float RIP_FREQ_Y = 0.55f * V_STRETCH;
+    private static final float RIP_SPEED  = 0.70f * SPEED_MULT;
+    private static final float RIP_INTENSITY = 0.55f;
+
+    private static final float HOLE_THRESH0 = 0.62f;
+    private static final float HOLE_THRESH1 = 0.78f;
+
+    // Optional "layered" feel without harsh quantization
+    private static final int BAND_STEPS = 7;
+    private static final float BAND_STEP_BLEND = 0.65f;
+
     private static final float V_TILES_PER_BLOCK = 1.0f;
+
+    // Constants to avoid repeated literals
+    private static final float PI2 = 6.283185307179586f;
 
     public WaterfallBlockRenderer(BlockEntityRendererFactory.Context ctx) {}
 
@@ -77,22 +105,73 @@ public class WaterfallBlockRenderer implements BlockEntityRenderer<WaterfallBloc
     }
 
     private static void renderSimpleSheet(WaterfallBlockEntity be,
-                                            float tickDelta,
-                                            MatrixStack matrices,
-                                            VertexConsumerProvider vertexConsumers,
-                                            int light,
-                                            Direction facing,
-                                            int blocksDown,
-                                            int anchorOffsetYBlocks,
-                                            BlockPos anchorTop) {
+                                          float tickDelta,
+                                          MatrixStack matrices,
+                                          VertexConsumerProvider vertexConsumers,
+                                          int light,
+                                          Direction facing,
+                                          int blocksDown,
+                                          int anchorOffsetYBlocks,
+                                          BlockPos anchorTop) {
         World world = be.getWorld();
         if (world == null) return;
 
         VertexConsumer vc = vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(WATER_TEX));
 
         double clientTime = world.getTime() + (double) tickDelta;
-        float t = (float) clientTime;
+        float tTicks = (float) clientTime;
         float seed = stableSeed01(anchorTop);
+
+        // ---- LOD: reduce vertical strips on tall waterfalls ----
+        int stripsPerBlock = STRIPS_PER_BLOCK;
+        if (blocksDown > 80) stripsPerBlock = 6;
+        else if (blocksDown > 48) stripsPerBlock = 8;
+
+        int segsX = SEGS_X;
+
+        int totalStrips = blocksDown * stripsPerBlock;
+        long estimatedQuads = (long) totalStrips * (long) segsX;
+        if (estimatedQuads > MAX_QUADS) {
+            segsX = Math.max(6, (int) (MAX_QUADS / Math.max(1L, (long) totalStrips)));
+        }
+
+        // Precompute per-column (uMid) terms once per render call
+        float[] uMidArr   = new float[segsX];
+        float[] uArr      = new float[segsX];
+        float[] uHalfArr  = new float[segsX];
+        float[] wxArr     = new float[segsX];
+        float[] baseU1Arr = new float[segsX]; // base for broad
+        float[] baseU2Arr = new float[segsX]; // base for mid
+        float[] baseUFAr  = new float[segsX]; // base for fine
+        float[] ripXArr   = new float[segsX]; // base for rip
+
+        // Seed offsets (avoid recomputing per pixel)
+        final float seed19 = seed * 19.0f;
+        final float seed41 = seed * 41.0f;
+        final float seed73 = seed * 73.0f;
+        final float seed11 = seed * 11.0f;
+        final float seed31 = seed * 3.1f;
+
+        for (int sx = 0; sx < segsX; sx++) {
+            float uA = (float) sx / (float) segsX;
+            float uB = (float) (sx + 1) / (float) segsX;
+            float uMid = (uA + uB) * 0.5f;
+
+            uMidArr[sx] = uMid;
+
+            float u = (uMid - 0.5f) * 2.0f;    // -1..1
+            float uHalf = (u * 0.5f + 0.5f);   // 0..1
+
+            uArr[sx] = u;
+            uHalfArr[sx] = uHalf;
+
+            wxArr[sx] = u * WARP_X_FREQ + seed31;
+
+            baseU1Arr[sx] = uHalf * BAND_FREQ_X + seed19;
+            baseU2Arr[sx] = uHalf * BAND2_FREQ_X + seed41;
+            baseUFAr[sx]  = uHalf * FINE_FREQ_X + seed73;
+            ripXArr[sx]   = uHalf * RIP_FREQ_X + seed11;
+        }
 
         matrices.push();
         matrices.translate(0.5, 0.0, 0.5);
@@ -106,16 +185,13 @@ public class WaterfallBlockRenderer implements BlockEntityRenderer<WaterfallBloc
         float topY = 1.0f;
         float bottomY = 1.0f - blocksDown;
 
-        int stripsPerBlock = STRIPS_PER_BLOCK;
-        int segsX = SEGS_X;
-
-        int totalStrips = blocksDown * stripsPerBlock;
-        long estimatedQuads = (long) totalStrips * (long) segsX;
-        if (estimatedQuads > MAX_QUADS) {
-            segsX = Math.max(6, (int) (MAX_QUADS / Math.max(1L, (long) totalStrips)));
-        }
-
         float stripH = (topY - bottomY) / (float) totalStrips;
+
+        // Time scale: you bumped this to 0.30f already; keep it centralized.
+        final float tt = tTicks * 0.30f;
+
+        // Precompute some constants for quantize
+        final float invSteps = 1.0f / (float) BAND_STEPS;
 
         for (int strip = 0; strip < totalStrips; strip++) {
             float y0 = topY - (strip + 1) * stripH;
@@ -125,10 +201,29 @@ public class WaterfallBlockRenderer implements BlockEntityRenderer<WaterfallBloc
             float effectiveFlow = be.getEffectiveFlow(clientTime, distanceBlocks);
             if (effectiveFlow <= 0.001f) continue;
 
+            float flow01 = MathHelper.clamp(effectiveFlow, 0.0f, 1.0f);
+            float baseAlpha = (0.30f + 0.70f * flow01);
+            int baseA = MathHelper.clamp((int) (baseAlpha * 255f), 0, 255);
+            if (baseA <= 1) continue;
+
             float vBlocks0 = anchorOffsetYBlocks + distanceDownFromLocalY(y0);
             float vBlocks1 = anchorOffsetYBlocks + distanceDownFromLocalY(y1);
             float vTile0 = vTileForBlocks(vBlocks0);
             float vTile1 = vTileForBlocks(vBlocks1);
+
+            // One pattern evaluation per quad uses vMid
+            float vMidBlocks = (vBlocks0 + vBlocks1) * 0.5f;
+
+            // Precompute v-scaled and wy once per strip (big win)
+            float vScaled = vMidBlocks * V_STRETCH;
+            float wy = vScaled * WARP_Y_FREQ - tt * WARP_SPEED;
+            float wy07 = 0.7f * wy;
+
+            // Compute v-phase bases once per strip
+            float vPhaseBase  = vScaled * BAND_FREQ_Y  - tt * BAND_SPEED;
+            float vPhase2Base = vScaled * BAND2_FREQ_Y - tt * BAND2_SPEED;
+            float vFineBase   = vScaled * FINE_FREQ_Y  - tt * FINE_SPEED;
+            float ripYBase    = vScaled * RIP_FREQ_Y   - tt * RIP_SPEED;
 
             for (int sx = 0; sx < segsX; sx++) {
                 float uA = (float) sx / (float) segsX;
@@ -142,29 +237,47 @@ public class WaterfallBlockRenderer implements BlockEntityRenderer<WaterfallBloc
                 float rxB = lxB * right.x();
                 float rzB = lxB * right.z();
 
-                float uMid = (uA + uB) * 0.5f;
-                float vMid = (vBlocks0 + vBlocks1) * 0.5f;
+                // ---- Optimized complexHoleField (no allocations, fewer trig, MathHelper.sin) ----
+                float wx = wxArr[sx];
 
-                float flow01 = MathHelper.clamp(effectiveFlow, 0.0f, 1.0f);
+                // warp1 = sin(wy + 1.2*sin(wx))
+                float warp1 = MathHelper.sin(wy + 1.2f * MathHelper.sin(wx));
 
-                // Smooth moving cutouts (no pixel noise):
-                // Create vertical-ish streaks from X with a gentle Y-warp that scrolls down.
-                float y = vMid * CUT_FREQ_Y - t * CUT_SPEED;
-                float x = uMid * CUT_FREQ_X + seed * 19.0f;
-                float warp = 0.70f * (float) Math.sin(y);
-                float raw = 0.5f + 0.5f * (float) Math.sin(x + warp);
-                // Convert to a sparse "hole" mask, feathered at edges.
-                float holeCore = smoothstep(CUT_THRESHOLD0, CUT_THRESHOLD1, raw);
-                float feather = Math.max(CUT_FEATHER, 1e-4f);
-                float hole = smoothstep(0.0f, feather, holeCore);
+                // warp2 = sin(0.7*wy + 1.7*sin(1.3*wx + 2.0))
+                float warp2 = MathHelper.sin(wy07 + 1.7f * MathHelper.sin(1.3f * wx + 2.0f));
 
-                // Base visibility + gentle downward shading so it doesn't look flat.
-                float scrollShade = 0.85f + 0.15f * (float) Math.sin(vMid * 3.0f - t * SCROLL_BLOCKS_PER_TICK * 6.0f + seed * 7.0f);
+                float warp = 0.55f * warp1 + 0.45f * warp2;
 
-                float baseAlpha = (0.30f + 0.70f * flow01) * scrollShade;
-                float alpha = baseAlpha * (1.0f - hole);
+                // broad
+                float vPhase = vPhaseBase + warp * WARP_V_STRENGTH;
+                float broad = 0.5f + 0.5f * MathHelper.sin(baseU1Arr[sx] + warp * WARP_U_STRENGTH + 0.80f * MathHelper.sin(vPhase));
 
-                int a = MathHelper.clamp((int) (alpha * 255f), 0, 255);
+                // mid
+                float vPhase2 = vPhase2Base + 0.4f * warp2;
+                float mid = 0.5f + 0.5f * MathHelper.sin(baseU2Arr[sx] + 0.8f * warp + 0.65f * MathHelper.sin(vPhase2));
+
+                // fine (lightweight)
+                float vFine = vFineBase + 0.7f * warp1;
+                float fine = 0.5f + 0.5f * MathHelper.sin(baseUFAr[sx] + 1.6f * warp + 0.25f * MathHelper.sin(vFine));
+
+                // Optional soft stepping (keep, but cheaper)
+                broad = quantizeSoftFast(broad, invSteps, BAND_STEP_BLEND);
+                mid   = quantizeSoftFast(mid,   invSteps, BAND_STEP_BLEND);
+                fine  = quantizeSoftFast(fine,  invSteps, Math.min(0.80f, BAND_STEP_BLEND + 0.10f));
+
+                // rips
+                float rip = 0.5f + 0.5f * MathHelper.sin(ripXArr[sx] + 1.2f * MathHelper.sin(ripYBase + 0.5f * warp2));
+                float ripShaped = smoothstep(0.72f, 0.92f, rip);
+
+                // hole tendency
+                float hole = 0.55f * (1.0f - broad) + 0.30f * (1.0f - mid) + 0.15f * (1.0f - fine);
+                hole = MathHelper.clamp(hole + RIP_INTENSITY * ripShaped, 0.0f, 1.0f);
+
+                // Single smoothstep + threshold (replaces 2 smoothsteps)
+                float holeSoft = smoothstep(HOLE_THRESH0, HOLE_THRESH1, hole);
+                boolean isHole = holeSoft > 0.5f;
+
+                int a = isHole ? 0 : baseA;
                 if (a <= 1) continue;
 
                 vc.vertex(m, rxA, y0, rzA).color(255, 255, 255, a).texture(uA, vTile0).overlay(OverlayTexture.DEFAULT_UV).light(light).normal(normal.x(), 0, normal.z());
@@ -175,6 +288,15 @@ public class WaterfallBlockRenderer implements BlockEntityRenderer<WaterfallBloc
         }
 
         matrices.pop();
+    }
+
+    // Faster quantize/soft blend: avoids floor() on huge values; still uses floor but fewer ops.
+    private static float quantizeSoftFast(float x, float invSteps, float blendToOriginal) {
+        x = MathHelper.clamp(x, 0.0f, 1.0f);
+        // q = floor(x * steps) / steps  <=> floor(x/ invSteps) * invSteps
+        float scaled = x / invSteps;
+        float q = (float) Math.floor(scaled) * invSteps;
+        return MathHelper.lerp(q, x, MathHelper.clamp(blendToOriginal, 0.0f, 1.0f));
     }
 
     private static float lerp(float a, float b, float t) {
@@ -188,7 +310,7 @@ public class WaterfallBlockRenderer implements BlockEntityRenderer<WaterfallBloc
 
     private static float vTileForBlocks(float vBlocks) {
         float distanceDown = Math.max(vBlocks, 0.0f) * V_TILES_PER_BLOCK;
-        float frac = (float) (distanceDown - java.lang.Math.floor(distanceDown));
+        float frac = (float) (distanceDown - Math.floor(distanceDown));
         if (frac == 0.0f && distanceDown > 0.0f) {
             frac = 1.0f;
         }
