@@ -1,8 +1,13 @@
 package dev.fouriis.karmagate.entity.client;
 
-import dev.fouriis.karmagate.block.karmagate.WaterfallBlock;
+import dev.fouriis.karmagate.block.karmagate.HeatCoilBlock;
+import dev.fouriis.karmagate.entity.karmagate.HeatCoilBlockEntity;
 import dev.fouriis.karmagate.entity.karmagate.WaterfallBlockEntity;
+import dev.fouriis.karmagate.particle.ModParticles;
 import net.minecraft.block.BlockState;
+import net.minecraft.block.entity.BlockEntity;
+import net.minecraft.fluid.FluidState;
+import net.minecraft.particle.ParticleTypes;
 import net.minecraft.client.render.OverlayTexture;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumer;
@@ -16,6 +21,7 @@ import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.shape.VoxelShape;
 import net.minecraft.world.World;
+import net.minecraft.client.color.world.BiomeColors;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
@@ -26,7 +32,7 @@ import org.joml.Vector3f;
  * Reduces vertex count by ~90% for solid sections while keeping exact visual detail.
  * - ThreadLocal Caching: Zero allocation per frame.
  */
-public class WaterfallBlockRenderer implements BlockEntityRenderer<WaterfallBlockEntity> {
+public class WaterfallBlockRenderer<T extends WaterfallBlockEntity> implements BlockEntityRenderer<T> {
 
     private static final Identifier WATER_TEX = Identifier.of("minecraft", "textures/block/water_flow.png");
     private static final int MAX_BLOCKS_DOWN = 128;
@@ -38,7 +44,7 @@ public class WaterfallBlockRenderer implements BlockEntityRenderer<WaterfallBloc
     private static final int LOW_LOD_SEGS_X = 12;
     private static final int MAX_QUADS = 40_000;
 
-    private static final float PLANE_HALF_WIDTH = 0.5f;
+    private static final float PLANE_HALF_WIDTH = 0.70710678f;
     private static final float DEPTH_NUDGE = 0.0015f;
 
     // Pattern Constants
@@ -94,7 +100,7 @@ public class WaterfallBlockRenderer implements BlockEntityRenderer<WaterfallBloc
     public WaterfallBlockRenderer(BlockEntityRendererFactory.Context ctx) {}
 
     @Override
-    public void render(WaterfallBlockEntity be, float tickDelta, MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light, int overlay) {
+    public void render(T be, float tickDelta, MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light, int overlay) {
         World world = be.getWorld();
         if (world == null) return;
 
@@ -106,16 +112,19 @@ public class WaterfallBlockRenderer implements BlockEntityRenderer<WaterfallBloc
             return;
         }
 
-        BlockState state = be.getCachedState();
-        Direction facing = Direction.NORTH;
-        if (state.contains(WaterfallBlock.FACING)) {
-            facing = state.get(WaterfallBlock.FACING);
-        }
+        float blocksDown = findWaterfallLength(world, pos);
+        if (blocksDown <= 0.01f) return;
 
-        int blocksDown = findBlocksDownToFirstSolid(world, pos);
-        if (blocksDown <= 0) return;
+        handleParticles(be, tickDelta, blocksDown);
 
-        renderSimpleSheet(be, tickDelta, matrices, vertexConsumers, light, facing, blocksDown, pos);
+        int color = BiomeColors.getWaterColor(world, pos);
+        float d = 0.70710678f;
+
+        // Plane 1
+        renderSimpleSheet(be, tickDelta, matrices, vertexConsumers, light, new Vector3f(d, 0, d), new Vector3f(-d, 0, d), color, blocksDown, pos);
+        
+        // Plane 2
+        renderSimpleSheet(be, tickDelta, matrices, vertexConsumers, light, new Vector3f(d, 0, -d), new Vector3f(d, 0, d), color, blocksDown, pos);
     }
 
     private static void renderSimpleSheet(WaterfallBlockEntity be,
@@ -123,14 +132,23 @@ public class WaterfallBlockRenderer implements BlockEntityRenderer<WaterfallBloc
                                           MatrixStack matrices,
                                           VertexConsumerProvider vertexConsumers,
                                           int light,
-                                          Direction facing,
-                                          int blocksDown,
+                                          Vector3f right,
+                                          Vector3f normal,
+                                          int color,
+                                          float blocksDown,
                                           BlockPos anchorTop) {
         
         VertexConsumer vc = vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(WATER_TEX));
         double clientTime = be.getWorld().getTime() + (double) tickDelta;
-        float tTicks = (float) clientTime;
+        // float tTicks = (float) clientTime; // Removed to prevent precision loss
         float seed = stableSeed01(anchorTop);
+
+        int r = (color >> 16) & 0xFF;
+        int g = (color >> 8) & 0xFF;
+        int b = color & 0xFF;
+        
+        // Wrap vScroll to avoid large float coordinates
+        float vScroll = (float) ((-clientTime * 0.06) % 1.0);
 
         // --- LOD Calculations ---
         int stripsPerBlock = STRIPS_PER_BLOCK;
@@ -145,7 +163,7 @@ public class WaterfallBlockRenderer implements BlockEntityRenderer<WaterfallBloc
         }
 
         // Safety cap
-        int totalStrips = blocksDown * stripsPerBlock;
+        int totalStrips = (int) (blocksDown * stripsPerBlock);
         if ((long)totalStrips * segsX > MAX_QUADS) {
             segsX = Math.max(6, (int) (MAX_QUADS / Math.max(1L, (long) totalStrips)));
         }
@@ -193,10 +211,8 @@ public class WaterfallBlockRenderer implements BlockEntityRenderer<WaterfallBloc
         // --- Matrix Setup ---
         matrices.push();
         matrices.translate(0.5, 0.0, 0.5);
-        Vector3f normal = normalForFacing(facing);
         matrices.translate(normal.x() * DEPTH_NUDGE, 0.0, normal.z() * DEPTH_NUDGE);
         Matrix4f m = matrices.peek().getPositionMatrix();
-        Vector3f right = rightForFacing(facing);
 
         float nx = normal.x();
         float nz = normal.z();
@@ -204,19 +220,20 @@ public class WaterfallBlockRenderer implements BlockEntityRenderer<WaterfallBloc
         float rz = right.z();
 
         float topY = 1.0f;
-        float bottomY = 1.0f - blocksDown;
+        float bottomY = -blocksDown;
         float stripH = (topY - bottomY) / (float) totalStrips;
         
-        final float tt = tTicks * 0.30f;
+        final double tt = clientTime * 0.30;
         final float invSteps = 1.0f / (float) BAND_STEPS;
         final float fineBlend = Math.min(0.80f, BAND_STEP_BLEND + 0.10f);
+        final double TWO_PI = Math.PI * 2.0;
 
-        // Constants to hoist out of loops
-        float wyBaseSub = -tt * WARP_SPEED;
-        float vPhaseBaseSub = -tt * BAND_SPEED;
-        float vPhase2BaseSub = -tt * BAND2_SPEED;
-        float vFineBaseSub = -tt * FINE_SPEED;
-        float ripYBaseSub = -tt * RIP_SPEED;
+        // Constants to hoist out of loops - wrapped modulo 2PI to preserve precision
+        float wyBaseSub = (float) ((-tt * WARP_SPEED) % TWO_PI);
+        float vPhaseBaseSub = (float) ((-tt * BAND_SPEED) % TWO_PI);
+        float vPhase2BaseSub = (float) ((-tt * BAND2_SPEED) % TWO_PI);
+        float vFineBaseSub = (float) ((-tt * FINE_SPEED) % TWO_PI);
+        float ripYBaseSub = (float) ((-tt * RIP_SPEED) % TWO_PI);
 
         // --- RENDER LOOP (COLUMN-MAJOR) ---
         // We iterate Columns (X), then Rows (Y). 
@@ -226,6 +243,11 @@ public class WaterfallBlockRenderer implements BlockEntityRenderer<WaterfallBloc
             // 1. Setup X Geometry
             float uA = (float) sx * invSegsX;
             float uB = (float) (sx + 1) * invSegsX;
+            
+            // Compute centering factor for this column (0 at center, 1 at edges)
+            float uCenter = ((float) sx + 0.5f) * invSegsX;
+            float uSigned = (uCenter - 0.5f) * 2.0f;
+            float uAbs = Math.abs(uSigned);
             
             float lxA = lerp(-PLANE_HALF_WIDTH, PLANE_HALF_WIDTH, uA);
             float lxB = lerp(-PLANE_HALF_WIDTH, PLANE_HALF_WIDTH, uB);
@@ -267,8 +289,9 @@ public class WaterfallBlockRenderer implements BlockEntityRenderer<WaterfallBloc
                     if (effectiveFlow > 0.001f) {
                         // Alpha Calc
                         float flow01 = effectiveFlow > 1f ? 1f : effectiveFlow; // clamp
-                        float baseAlpha = (0.30f + 0.70f * flow01);
-                        currentA = (int) (baseAlpha * 255f);
+                        // User requested: Base texture transparency should not change.
+                        // We keep alpha at max (255) but erode the mesh using thresholds.
+                        currentA = 255;
 
                         if (currentA > 1) {
                             // --- Heavy Noise Math (Y-dependent only) ---
@@ -307,8 +330,18 @@ public class WaterfallBlockRenderer implements BlockEntityRenderer<WaterfallBloc
                             float hole = 0.55f * (1.0f - broad) + 0.30f * (1.0f - mid) + 0.15f * (1.0f - fine);
                             hole += RIP_INTENSITY * ripShaped;
 
+                            // Centering bias: erode edges faster than center to prevent floating artifacts
+                            // uAbs is 0 at center, 1 at edges.
+                            float centering = uAbs * uAbs * (1.0f - flow01) * 2.0f;
+                            hole += centering;
+
                             // Final Threshold
-                            float holeSoft = smoothstep(HOLE_THRESH0, HOLE_THRESH1, hole);
+                            // Erode the waterfall as flow decreases by lowering the hole threshold.
+                            float erosion = (1.0f - flow01) * 0.8f;
+                            float t0 = HOLE_THRESH0 - erosion;
+                            float t1 = HOLE_THRESH1 - erosion;
+
+                            float holeSoft = smoothstep(t0, t1, hole);
                             
                             // If holeSoft > 0.5, it is a hole.
                             isHole = (holeSoft > 0.5f);
@@ -345,7 +378,7 @@ public class WaterfallBlockRenderer implements BlockEntityRenderer<WaterfallBloc
                         
                         float yTop = yStart;
                         float yBot = topY - strip * stripH; // This is the bottom of CURRENT strip
-                        if (isHole || isEnd) yBot += stripH; // Back up to top of current
+                        if (isHole && !isEnd) yBot += stripH; // Back up to top of current
 
                         float vTopCoord = vStart * V_TILES_PER_BLOCK;
                         float vBotCoord = (isHole || isEnd ? vCurr : (vCurr + (float)stripH*0)) * V_TILES_PER_BLOCK; 
@@ -353,10 +386,10 @@ public class WaterfallBlockRenderer implements BlockEntityRenderer<WaterfallBloc
                         float vTopExact = (1.0f - yTop) * V_TILES_PER_BLOCK; 
                         float vBotExact = (1.0f - yBot) * V_TILES_PER_BLOCK;
 
-                        vc.vertex(m, rxA, yTop, rzA).color(255, 255, 255, baseA).texture(uA, vTopExact).overlay(OverlayTexture.DEFAULT_UV).light(light).normal(nx, 0, nz);
-                        vc.vertex(m, rxB, yTop, rzB).color(255, 255, 255, baseA).texture(uB, vTopExact).overlay(OverlayTexture.DEFAULT_UV).light(light).normal(nx, 0, nz);
-                        vc.vertex(m, rxB, yBot, rzB).color(255, 255, 255, baseA).texture(uB, vBotExact).overlay(OverlayTexture.DEFAULT_UV).light(light).normal(nx, 0, nz);
-                        vc.vertex(m, rxA, yBot, rzA).color(255, 255, 255, baseA).texture(uA, vBotExact).overlay(OverlayTexture.DEFAULT_UV).light(light).normal(nx, 0, nz);
+                        vc.vertex(m, rxA, yTop, rzA).color(r, g, b, baseA).texture(uA, vTopExact + vScroll).overlay(OverlayTexture.DEFAULT_UV).light(light).normal(nx, 0, nz);
+                        vc.vertex(m, rxB, yTop, rzB).color(r, g, b, baseA).texture(uB, vTopExact + vScroll).overlay(OverlayTexture.DEFAULT_UV).light(light).normal(nx, 0, nz);
+                        vc.vertex(m, rxB, yBot, rzB).color(r, g, b, baseA).texture(uB, vBotExact + vScroll).overlay(OverlayTexture.DEFAULT_UV).light(light).normal(nx, 0, nz);
+                        vc.vertex(m, rxA, yBot, rzA).color(r, g, b, baseA).texture(uA, vBotExact + vScroll).overlay(OverlayTexture.DEFAULT_UV).light(light).normal(nx, 0, nz);
 
                         isDrawing = false;
                         
@@ -419,36 +452,116 @@ public class WaterfallBlockRenderer implements BlockEntityRenderer<WaterfallBloc
         return (float) ((h >>> 11) & ((1L << 53) - 1)) / (float)(1L << 53);
     }
 
-    private static int findBlocksDownToFirstSolid(World world, BlockPos origin) {
+    private static float findWaterfallLength(World world, BlockPos origin) {
         int bottomY = world.getBottomY();
         int y = origin.getY() - 1;
         int blocks = 0;
         BlockPos.Mutable p = new BlockPos.Mutable();
         p.setX(origin.getX()); p.setZ(origin.getZ());
+        
         while (y >= bottomY && blocks < MAX_BLOCKS_DOWN) {
             p.setY(y);
-            if (!world.getBlockState(p).getCollisionShape(world, p).isEmpty()) return blocks;
+            BlockState state = world.getBlockState(p);
+            FluidState fluid = world.getFluidState(p);
+
+            if (!fluid.isEmpty()) {
+                float fluidHeight = fluid.getHeight(world, p);
+                return blocks + (1.0f - fluidHeight);
+            }
+
+            if (state.isOpaqueFullCube(world, p)) {
+                VoxelShape shape = state.getCollisionShape(world, p);
+                double maxY = shape.isEmpty() ? 0.0 : shape.getMax(Direction.Axis.Y);
+                return blocks + (1.0f - (float)maxY);
+            }
+            
             blocks++;
             y--;
         }
         return blocks;
     }
 
-    private static Vector3f normalForFacing(Direction facing) {
-        return switch (facing) {
-            case NORTH -> new Vector3f(0, 0, -1);
-            case SOUTH -> new Vector3f(0, 0, 1);
-            case EAST -> new Vector3f(1, 0, 0);
-            case WEST -> new Vector3f(-1, 0, 0);
-            default -> new Vector3f(0, 0, 1);
-        };
-    }
+    private void handleParticles(T be, float tickDelta, float blocksDown) {
+        World world = be.getWorld();
+        if (world == null) return;
 
-    private static Vector3f rightForFacing(Direction facing) {
-        return switch (facing) {
-            case NORTH, SOUTH -> new Vector3f(1, 0, 0);
-            case EAST, WEST -> new Vector3f(0, 0, 1);
-            default -> new Vector3f(1, 0, 0);
-        };
+        BlockPos pos = be.getPos();
+        double clientTime = world.getTime() + (double) tickDelta;
+        int maxIndex = (int) blocksDown + 1;
+
+        // Heat Coil & Pass-through Interaction
+        for (int i = 1; i <= maxIndex; i++) {
+            BlockPos hitPos = pos.down(i);
+            BlockState hitState = world.getBlockState(hitPos);
+
+            if (hitState.getBlock() instanceof HeatCoilBlock) {
+                BlockEntity hitBe = world.getBlockEntity(hitPos);
+                if (hitBe instanceof HeatCoilBlockEntity coil) {
+                    float heat = coil.getHeat();
+                    if (heat <= 0.01f) continue;
+
+                    float flow = be.getEffectiveFlow(clientTime, i - 0.5);
+
+                    if (flow > 0.05f) {
+                        float intensity = heat * flow;
+                        if (world.random.nextFloat() < intensity * 0.8f) {
+                            double px = hitPos.getX() + 0.5 + (world.random.nextDouble() - 0.5) * 0.8;
+                            double py = hitPos.getY() + 1.0;
+                            double pz = hitPos.getZ() + 0.5 + (world.random.nextDouble() - 0.5) * 0.8;
+
+                            world.addParticle(ModParticles.STEAM, px, py, pz, 0, intensity, 0);
+                            coil.clientPulseCool(0.15f * flow, 5);
+                        }
+                    }
+                }
+            } else if (!hitState.isAir() && i <= blocksDown) {
+                // Splash on pass-through blocks (e.g. signs, bars)
+                float flow = be.getEffectiveFlow(clientTime, i - 0.5);
+                if (flow > 0.05f) {
+                    float chance = flow * 0.5f;
+                    if (world.random.nextFloat() < chance) {
+                        double px = hitPos.getX() + 0.5 + (world.random.nextDouble() - 0.5) * 0.5;
+                        double py = hitPos.getY() + 1.0; // Top of the block
+                        double pz = hitPos.getZ() + 0.5 + (world.random.nextDouble() - 0.5) * 0.5;
+                        world.addParticle(ParticleTypes.SPLASH, px, py, pz, 0, 0, 0);
+                    }
+                }
+            }
+        }
+
+        // Splash / Bubble Interaction at Impact
+        float flowAtBottom = be.getEffectiveFlow(clientTime, blocksDown);
+        if (flowAtBottom > 0.05f) {
+            double impactX = pos.getX() + 0.5;
+            double impactY = pos.getY() - blocksDown;
+            double impactZ = pos.getZ() + 0.5;
+
+            // Check if hitting water
+            BlockPos impactBlockPos = BlockPos.ofFloored(impactX, impactY - 0.05, impactZ);
+            FluidState fluidState = world.getFluidState(impactBlockPos);
+            boolean isWater = !fluidState.isEmpty();
+
+            // Particle count based on flow
+            float chance = flowAtBottom * 0.8f; 
+            int count = (int) chance;
+            if (world.random.nextFloat() < (chance - count)) {
+                count++;
+            }
+
+            for (int k = 0; k < count; k++) {
+                double ox = (world.random.nextDouble() - 0.5) * 0.8;
+                double oz = (world.random.nextDouble() - 0.5) * 0.8;
+                
+                world.addParticle(ParticleTypes.SPLASH, 
+                    impactX + ox, impactY + 0.05, impactZ + oz, 
+                    0, 0, 0);
+
+                if (isWater) {
+                    world.addParticle(ParticleTypes.BUBBLE, 
+                        impactX + ox, impactY - 0.1, impactZ + oz, 
+                        0, 0, 0);
+                }
+            }
+        }
     }
 }

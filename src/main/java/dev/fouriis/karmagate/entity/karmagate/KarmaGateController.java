@@ -4,7 +4,6 @@ package dev.fouriis.karmagate.entity.karmagate;
 import dev.fouriis.karmagate.KarmaGateMod;
 import dev.fouriis.karmagate.block.karmagate.KarmaGateBlock;
 import dev.fouriis.karmagate.block.karmagate.SteamEmitterBlock;
-import dev.fouriis.karmagate.block.karmagate.WaterStreamBlock;
 import dev.fouriis.karmagate.entity.hologram.HologramProjectorBlockEntity;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.entity.BlockEntity;
@@ -392,7 +391,7 @@ public final class KarmaGateController {
                 if (outerAnimWait > 0) { outerAnimWait--; break; }
 
                 mode = Mode.Waiting;
-                setWaterFlowForSide(world, entrySide, 0.5f);
+                setWaterFlowForSide(world, entrySide, 0.7f);
                 setWaterFlowForSide(world, opposite(entrySide), 0.0f);
                 setSteamEnabledForSide(world, entrySide, true);
                 KarmaGateMod.LOGGER.info("[GateCtrl @{}] outer closed → Waiting", controllerBE.getPos());
@@ -516,19 +515,11 @@ public final class KarmaGateController {
         setWaterFlow(world, getWaterList(side), flow);
     }
     private void setWaterFlow(World world, List<BlockPos> list, float flow) {
-        boolean enable = flow > 0.02f;
         //KarmaGateMod.LOGGER.info("[GateCtrl @{}] setWaterFlow: targets={}, flow={}, enable={}", controllerBE.getPos(), list.size(), String.format("%.2f", flow), enable);
         for (BlockPos p : list) {
-            BlockState s = world.getBlockState(p);
-            if (s.getBlock() instanceof WaterStreamBlock) {
-                boolean cur = s.get(WaterStreamBlock.ENABLED);
-                if (cur != enable) {
-                    world.setBlockState(p, s.with(WaterStreamBlock.ENABLED, enable), 3);
-                }
-            }
             BlockEntity be = world.getBlockEntity(p);
             if (be instanceof WaterStreamBlockEntity ws) {
-                ws.setFlow(flow);
+                ws.setTargetFlow(flow);
             }
         }
     }

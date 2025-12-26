@@ -52,6 +52,7 @@ public class KarmaGateModClient implements ClientModInitializer {
 		BlockEntityRendererFactories.register(ModBlockEntities.HEAT_COIL_BLOCK_ENTITY, HeatCoilRenderer::new);
 		BlockEntityRendererFactories.register(ModBlockEntities.HOLOGRAM_PROJECTOR, HologramProjectorRenderer::new);
 		BlockEntityRendererFactories.register(ModBlockEntities.WATERFALL_BLOCK_ENTITY, WaterfallBlockRenderer::new);
+		BlockEntityRendererFactories.register(ModBlockEntities.WATER_STREAM_BLOCK_ENTITY, WaterfallBlockRenderer::new);
 
 		ParticleFactoryRegistry.getInstance().register(ModParticles.WATER_STREAM, sprites -> new WaterStreamParticle.Factory(sprites));
 		ParticleFactoryRegistry.getInstance().register(ModParticles.STEAM, sprites -> new SteamParticle.Factory(sprites));

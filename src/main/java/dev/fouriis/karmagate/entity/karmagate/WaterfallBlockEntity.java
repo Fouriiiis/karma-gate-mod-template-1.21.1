@@ -22,7 +22,11 @@ public class WaterfallBlockEntity extends BlockEntity {
     private final ArrayDeque<FlowKeyframe> clientKeyframes = new ArrayDeque<>();
 
     public WaterfallBlockEntity(BlockPos pos, BlockState state) {
-        super(ModBlockEntities.WATERFALL_BLOCK_ENTITY, pos, state);
+        this(ModBlockEntities.WATERFALL_BLOCK_ENTITY, pos, state);
+    }
+
+    protected WaterfallBlockEntity(net.minecraft.block.entity.BlockEntityType<?> type, BlockPos pos, BlockState state) {
+        super(type, pos, state);
     }
 
     /* ---------------- Ticking ---------------- */
@@ -65,6 +69,14 @@ public class WaterfallBlockEntity extends BlockEntity {
         if (world != null) {
             if (world instanceof ServerWorld sw && !world.isClient) {
                 sw.getChunkManager().markForUpdate(pos);
+            } else if (world.isClient) {
+                // On client, treat local changes as keyframes for propagation
+                long now = world.getTime();
+                FlowKeyframe last = clientKeyframes.peekLast();
+                if (last == null || Math.abs(last.flow - flow) > 1e-4f) {
+                    clientKeyframes.addLast(new FlowKeyframe(now, flow));
+                }
+                clientMaintainKeyframes();
             }
             world.updateListeners(pos, getCachedState(), getCachedState(), 3);
         }
