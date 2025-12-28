@@ -4,6 +4,7 @@ import dev.fouriis.karmagate.block.karmagate.HeatCoilBlock;
 import dev.fouriis.karmagate.entity.karmagate.HeatCoilBlockEntity;
 import dev.fouriis.karmagate.entity.karmagate.WaterfallBlockEntity;
 import dev.fouriis.karmagate.particle.ModParticles;
+import dev.fouriis.karmagate.sound.SteamAudioController;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.fluid.FluidState;
@@ -504,6 +505,7 @@ public class WaterfallBlockRenderer<T extends WaterfallBlockEntity> implements B
 
                     if (flow > 0.05f) {
                         float intensity = heat * flow;
+                        SteamAudioController.get().onSteamBurst(hitPos, intensity);
                         if (world.random.nextFloat() < intensity * 0.8f) {
                             double px = hitPos.getX() + 0.5 + (world.random.nextDouble() - 0.5) * 0.8;
                             double py = hitPos.getY() + 1.0;
