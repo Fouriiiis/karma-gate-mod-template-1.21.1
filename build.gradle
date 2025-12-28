@@ -18,6 +18,13 @@ repositories {
 			includeGroup("software.bernie.geckolib")
 		}
 	}
+	maven {
+		name = "Modrinth"
+		url = "https://api.modrinth.com/maven"
+		content {
+			includeGroup "maven.modrinth"
+		}
+	}
 }
 
 loom {
@@ -43,6 +50,7 @@ dependencies {
 	// Fabric API. This is technically optional, but you probably want it anyway.
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 	modImplementation "software.bernie.geckolib:geckolib-fabric-${minecraft_version}:${geckolib_version}"
+	modImplementation files("run/mods/sodium-fabric-0.6.9+mc1.21.1.jar")
 	
 }
 

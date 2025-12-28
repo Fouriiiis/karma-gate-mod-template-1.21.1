@@ -5,7 +5,10 @@
 	"client": [
 		"ExampleClientMixin",
 		"GameRendererMixin",
-		"GameRendererAccessor"
+		"GameRendererAccessor",
+		"SodiumFluidRenderMixin",
+		"GlProgramMixin",
+		"ShaderChunkRendererMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1
