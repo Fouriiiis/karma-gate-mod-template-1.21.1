@@ -561,7 +561,7 @@ public class WaterfallBlockRenderer<T extends WaterfallBlockEntity> implements B
                 if (isWater) {
                     world.addParticle(ParticleTypes.BUBBLE, 
                         impactX + ox, impactY - 0.1, impactZ + oz, 
-                        0, 0, 0);
+                        0, -0.3, 0);
                 }
             }
         }
