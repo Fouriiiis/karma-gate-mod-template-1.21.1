@@ -1,6 +1,7 @@
 package dev.fouriis.karmagate.mixin.client;
 
 import dev.fouriis.karmagate.client.DistantStructuresRenderer;
+import dev.fouriis.karmagate.client.gridproject.GridProjectRenderer;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.GameRenderer;
 import net.minecraft.client.render.LightmapTextureManager;
@@ -25,5 +26,6 @@ public class GameRendererMixin {
     ) {
         float tickDelta = tickCounter.getTickDelta(true);
         DistantStructuresRenderer.renderLate(tickDelta, camera);
+        GridProjectRenderer.renderLate(tickDelta, camera);
     }
 }

@@ -32,6 +32,12 @@ import net.minecraft.world.World;
 import net.minecraft.client.MinecraftClient;
 import net.fabricmc.fabric.api.client.rendering.v1.BuiltinItemRendererRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.DimensionRenderingRegistry;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
+
+import com.mojang.brigadier.arguments.StringArgumentType;
+import dev.fouriis.karmagate.client.gridproject.FocusPoints;
+import net.minecraft.text.Text;
 
 import java.util.Map;
 import java.util.HashMap;
@@ -203,6 +209,46 @@ public class KarmaGateModClient implements ClientModInitializer {
 			clampLoops.clear();
 			screwLoops.clear();
 		});
+
+		// Client command: add focus points for the grid projection shader
+		ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
+			dispatcher.register(ClientCommandManager.literal("fp")
+				.then(ClientCommandManager.argument("x", StringArgumentType.word())
+					.then(ClientCommandManager.argument("y", StringArgumentType.word())
+						.then(ClientCommandManager.argument("z", StringArgumentType.word())
+							.executes(ctx -> {
+								var player = net.minecraft.client.MinecraftClient.getInstance().player;
+								if (player == null) {
+									ctx.getSource().sendError(Text.literal("No player available to resolve ~ coordinates."));
+									return 0;
+								}
+
+								String xArg = StringArgumentType.getString(ctx, "x");
+								String yArg = StringArgumentType.getString(ctx, "y");
+								String zArg = StringArgumentType.getString(ctx, "z");
+
+								double x = parseCoord(xArg, player.getX());
+								double y = parseCoord(yArg, player.getY());
+								double z = parseCoord(zArg, player.getZ());
+
+								FocusPoints.add(new net.minecraft.util.math.Vec3d(x, y, z));
+								ctx.getSource().sendFeedback(Text.literal("Added focus point at " + x + ", " + y + ", " + z));
+								return 1;
+							})
+						)
+					)
+				)
+			);
+		});
+	}
+
+	private static double parseCoord(String token, double base) {
+		if (token == null || token.isEmpty()) return base;
+		if (token.charAt(0) == '~') {
+			if (token.length() == 1) return base;
+			return base + Double.parseDouble(token.substring(1));
+		}
+		return Double.parseDouble(token);
 	}
 
 	private static Spec chooseScrewLoopSpec(BlockPos pos) {
