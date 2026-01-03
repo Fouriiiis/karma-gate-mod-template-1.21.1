@@ -31,43 +31,5 @@
 
     { "name": "uEffectAmount",  "type": "float", "count": 1, "values": [ 1.0 ] },
     { "name": "uElectricPower", "type": "float", "count": 1, "values": [ 1.0 ] }
-
-    ,{ "name": "uFocusCount",       "type": "float", "count": 1, "values": [ 0.0 ] }
-    ,{ "name": "uFocusBorderPx",    "type": "float", "count": 1, "values": [ 2.0 ] }
-    ,{ "name": "uFocusLinePx",      "type": "float", "count": 1, "values": [ 1.5 ] }
-
-    ,{ "name": "uFocusScreen0",  "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusScreen1",  "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusScreen2",  "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusScreen3",  "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusScreen4",  "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusScreen5",  "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusScreen6",  "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusScreen7",  "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusScreen8",  "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusScreen9",  "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusScreen10", "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusScreen11", "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusScreen12", "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusScreen13", "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusScreen14", "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusScreen15", "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-
-    ,{ "name": "uFocusPoint0",  "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusPoint1",  "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusPoint2",  "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusPoint3",  "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusPoint4",  "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusPoint5",  "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusPoint6",  "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusPoint7",  "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusPoint8",  "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusPoint9",  "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusPoint10", "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusPoint11", "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusPoint12", "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusPoint13", "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusPoint14", "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
-    ,{ "name": "uFocusPoint15", "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
   ]
 }

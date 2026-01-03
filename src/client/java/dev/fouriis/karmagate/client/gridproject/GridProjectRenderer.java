@@ -18,7 +18,6 @@ import net.minecraft.world.biome.BiomeKeys;
 import net.minecraft.world.World;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
-import org.joml.Vector4f;
 import it.unimi.dsi.fastutil.longs.Long2BooleanOpenHashMap;
 
 public final class GridProjectRenderer {
@@ -29,11 +28,6 @@ public final class GridProjectRenderer {
     private static final int MAX_QUADS = 60_000;
     private static final float SURFACE_NUDGE = 0.00125f;
     private static final float MIN_FADE_BRIGHTNESS = 32.0f; // 0..255
-
-    // Focus point visuals
-    private static final float FOCUS_RADIUS_WORLD = 0.75f; // blocks
-    private static final float FOCUS_BORDER_PX = 2.0f;
-    private static final float FOCUS_LINE_PX = 1.5f;
 
     // --- Angle integration state (render thread only) ---
     private static boolean hasAngles = false;
@@ -114,54 +108,6 @@ public final class GridProjectRenderer {
         matrices.peek().getPositionMatrix().mul(view);
 
         Matrix4f m = matrices.peek().getPositionMatrix();
-
-        // Focus points (project world -> screen in Java so it matches the CPU-transformed vertex positions)
-        setUniform1f(program, "uFocusBorderPx", FOCUS_BORDER_PX);
-        setUniform1f(program, "uFocusLinePx", FOCUS_LINE_PX);
-        int fpCount = FocusPoints.count();
-        setUniform1f(program, "uFocusCount", (float) fpCount);
-
-        Matrix4f proj = new Matrix4f(RenderSystem.getProjectionMatrix());
-        float projY = proj.m11();
-
-        for (int i = 0; i < FocusPoints.MAX_POINTS; i++) {
-            var p = FocusPoints.get(i);
-            if (p == null) {
-                setUniform4f(program, "uFocusScreen" + i, 0.0f, 0.0f, 0.0f, 0.0f);
-                continue;
-            }
-
-            Vector4f v = new Vector4f((float) p.x, (float) p.y, (float) p.z, 1.0f);
-            m.transform(v);
-
-            // In front of the camera is typically -Z in view space.
-            float vz = v.z;
-            if (vz >= -1e-3f) {
-                setUniform4f(program, "uFocusScreen" + i, 0.0f, 0.0f, 0.0f, 0.0f);
-                continue;
-            }
-
-            Vector4f clip = new Vector4f(v);
-            proj.transform(clip);
-            if (clip.w <= 1e-6f) {
-                setUniform4f(program, "uFocusScreen" + i, 0.0f, 0.0f, 0.0f, 0.0f);
-                continue;
-            }
-
-            float ndcX = clip.x / clip.w;
-            float ndcY = clip.y / clip.w;
-
-            float px = (ndcX * 0.5f + 0.5f) * fbw;
-            float py = (ndcY * 0.5f + 0.5f) * fbh;
-
-            float radiusPx = (FOCUS_RADIUS_WORLD * projY / (-vz)) * 0.5f * fbh;
-            if (!(radiusPx > 0.5f)) {
-                setUniform4f(program, "uFocusScreen" + i, 0.0f, 0.0f, 0.0f, 0.0f);
-                continue;
-            }
-
-            setUniform4f(program, "uFocusScreen" + i, px, py, radiusPx, 1.0f);
-        }
 
         VertexConsumerProvider.Immediate immediate = mc.getBufferBuilders().getEntityVertexConsumers();
         VertexConsumer vc = immediate.getBuffer(GridProjectRenderLayer.get());
