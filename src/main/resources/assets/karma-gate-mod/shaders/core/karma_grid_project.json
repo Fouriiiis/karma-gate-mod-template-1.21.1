@@ -1,35 +1,181 @@
 {
-  "blend": { "func": "add", "srcrgb": "src_alpha", "dstrgb": "one_minus_src_alpha" },
-
-  "vertex":   "karma-gate-mod:karma_grid_project",
+  "blend": {
+    "func": "add",
+    "srcrgb": "src_alpha",
+    "dstrgb": "one_minus_src_alpha"
+  },
+  "vertex": "karma-gate-mod:karma_grid_project",
   "fragment": "karma-gate-mod:karma_grid_project",
-
-  "attributes": [ "Position", "Color", "UV0" ],
-
-  "samplers": [
-    { "name": "Sampler0", "wrap": "clamp", "minfilter": "linear", "magfilter": "linear" }
+  "attributes": [
+    "Position",
+    "Color",
+    "UV0"
   ],
-
+  "samplers": [
+    {
+      "name": "Sampler0",
+      "wrap": "clamp",
+      "minfilter": "linear",
+      "magfilter": "linear"
+    }
+  ],
   "uniforms": [
-    { "name": "ModelViewMat", "type": "matrix4x4", "count": 16, "values": [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1] },
-    { "name": "ProjMat",      "type": "matrix4x4", "count": 16, "values": [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1] },
-
-    { "name": "GameTime",     "type": "float", "count": 1, "values": [ 0.0 ] },
-
-    { "name": "uInvScreenSize", "type": "float", "count": 2, "values": [ 0.001, 0.001 ] },
-    { "name": "uScrollUV",      "type": "float", "count": 2, "values": [ 0.0, 0.0 ] },
-    { "name": "uGridCells",     "type": "float", "count": 1, "values": [ 48.0 ] },
-    { "name": "uLineWidthPx",   "type": "float", "count": 1, "values": [ 0.55 ] },
-    { "name": "uFovScale",      "type": "float", "count": 1, "values": [ 1.0 ] },
-    { "name": "uCamY",          "type": "float", "count": 1, "values": [ 0.0 ] },
-    { "name": "uOpacity",       "type": "float", "count": 1, "values": [ 0.70 ] },
-
-    { "name": "uTime",          "type": "float", "count": 1, "values": [ 0.0 ] },
-
-
-    { "name": "uAnimSpeed",     "type": "float", "count": 1, "values": [ 1.0 ] },
-
-    { "name": "uEffectAmount",  "type": "float", "count": 1, "values": [ 1.0 ] },
-    { "name": "uElectricPower", "type": "float", "count": 1, "values": [ 1.0 ] }
+    {
+      "name": "ModelViewMat",
+      "type": "matrix4x4",
+      "count": 16,
+      "values": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "name": "ProjMat",
+      "type": "matrix4x4",
+      "count": 16,
+      "values": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "name": "GameTime",
+      "type": "float",
+      "count": 1,
+      "values": [
+        0.0
+      ]
+    },
+    {
+      "name": "uTime",
+      "type": "float",
+      "count": 1,
+      "values": [
+        0.0
+      ]
+    },
+    {
+      "name": "uGridCells",
+      "type": "float",
+      "count": 1,
+      "values": [
+        48.0
+      ]
+    },
+    {
+      "name": "uLineWidthPx",
+      "type": "float",
+      "count": 1,
+      "values": [
+        0.08
+      ]
+    },
+    {
+      "name": "uOpacity",
+      "type": "float",
+      "count": 1,
+      "values": [
+        0.7
+      ]
+    },
+    {
+      "name": "uAnimSpeed",
+      "type": "float",
+      "count": 1,
+      "values": [
+        1.0
+      ]
+    },
+    {
+      "name": "uEffectAmount",
+      "type": "float",
+      "count": 1,
+      "values": [
+        1.0
+      ]
+    },
+    {
+      "name": "uElectricPower",
+      "type": "float",
+      "count": 1,
+      "values": [
+        1.0
+      ]
+    },
+    {
+      "name": "uZoneCenterX",
+      "type": "float",
+      "count": 1,
+      "values": [
+        0.0
+      ]
+    },
+    {
+      "name": "uZoneCenterZ",
+      "type": "float",
+      "count": 1,
+      "values": [
+        0.0
+      ]
+    },
+    {
+      "name": "uZoneRadius",
+      "type": "float",
+      "count": 1,
+      "values": [
+        8.0
+      ]
+    },
+    {
+      "name": "uInvViewMat",
+      "type": "matrix4x4",
+      "count": 16,
+      "values": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1
+      ]
+    }
   ]
 }

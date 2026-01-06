@@ -14,31 +14,23 @@ import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.shape.VoxelShape;
-import net.minecraft.world.biome.BiomeKeys;
 import net.minecraft.world.World;
 import org.joml.Matrix4f;
-import org.joml.Vector3f;
-import it.unimi.dsi.fastutil.longs.Long2BooleanOpenHashMap;
+
+import java.util.List;
 
 public final class GridProjectRenderer {
     private GridProjectRenderer() {}
 
-    // Projection range (roughly a sphere around the camera)
-    private static final int RADIUS_BLOCKS = 50;
     private static final int MAX_QUADS = 60_000;
     private static final float SURFACE_NUDGE = 0.00125f;
-    private static final float MIN_FADE_BRIGHTNESS = 32.0f; // 0..255
+    private static final float MIN_FADE_BRIGHTNESS = 32.0f;
 
-    // --- Angle integration state (render thread only) ---
-    private static boolean hasAngles = false;
-    private static float lastYawRad = 0f;
-    private static float lastPitchRad = 0f;
-    private static boolean hasPos = false;
-    private static double lastCamX = 0.0;
-    private static double lastCamY = 0.0;
-    private static double lastCamZ = 0.0;
-    private static float scrollU = 0f;
-    private static float scrollV = 0f;
+    // Maximum render distance from camera
+    private static final int RENDER_DISTANCE = 64;
+
+    // Flag for test zone initialization
+    private static boolean testZonesInitialized = false;
 
     public static void renderLate(float tickDelta, Camera camera) {
         if (GridProjectShaders.PROGRAM == null) return;
@@ -47,59 +39,37 @@ public final class GridProjectRenderer {
         World world = mc.world;
         if (world == null || camera == null) return;
 
-        // Avoid doing work when the framebuffer is not ready.
-        if (mc.getWindow() == null || mc.getWindow().getFramebufferWidth() <= 0 || mc.getWindow().getFramebufferHeight() <= 0) return;
-        int fbw = mc.getWindow().getFramebufferWidth();
-        int fbh = mc.getWindow().getFramebufferHeight();
+        // Initialize test zones on first render
+        if (!testZonesInitialized) {
+            ProjectionZone.initTestZones();
+            testZonesInitialized = true;
+        }
+
+        List<ProjectionZone> zones = ProjectionZone.getZones();
+        if (zones.isEmpty()) return;
+
+        if (mc.getWindow() == null
+            || mc.getWindow().getFramebufferWidth() <= 0
+            || mc.getWindow().getFramebufferHeight() <= 0) return;
 
         Vec3d camPos = camera.getPos();
-        BlockPos center = BlockPos.ofFloored(camPos);
+        BlockPos camBlock = BlockPos.ofFloored(camPos);
 
-        // Bind our shader so uniform updates go to the right program.
         ShaderProgram program = GridProjectShaders.PROGRAM;
         RenderSystem.setShader(() -> program);
 
-        // Update uniforms that must change every frame.
-        float invW = 1.0f / (float) fbw;
-        float invH = 1.0f / (float) fbh;
-        setUniform2f(program, "uInvScreenSize", invW, invH);
-
-        // Derive yaw/pitch directly from camera to avoid singularities at zenith/nadir.
-        // Minecraft yaw: 0 = South (+Z), 90 = West (-X), 180 = North (-Z), 270 = East (+X)
-        // We convert to standard math angles (0 = East, CCW) or just pass as is and handle in shader.
-        // Let's pass radians.
-        // Note: Camera.getYaw() returns degrees.
-        float yawRad = (float) Math.toRadians(camera.getYaw());
-        float pitchRad = (float) Math.toRadians(camera.getPitch());
-
-        // Scale delta angles -> UV so grid scroll rate matches what the camera does on screen.
-        // We use dynamic FOV to stay consistent with zoom/speed/FOV effects.
-        double vfovDeg = ((GameRendererAccessor) mc.gameRenderer).karmaGate$invokeGetFov(camera, tickDelta, true);
-        float vfovRad = (float) Math.toRadians(vfovDeg);
-        float aspect = (float) fbw / (float) Math.max(1, fbh);
-        
-        // Pass FOV scale to shader for correct ray reconstruction
-        float tanHalfFov = (float) Math.tan(vfovRad * 0.5f);
-        setUniform1f(program, "uFovScale", tanHalfFov);
-
-        // Pass raw angles to shader for infinity tunnel effect.
-        // uScrollUV.x = Yaw (radians)
-        // uScrollUV.y = Pitch (radians)
-        scrollU = yawRad;
-        scrollV = pitchRad;
-
-        setUniform2f(program, "uScrollUV", scrollU, scrollV);
-        setUniform1f(program, "uCamY", (float) camPos.y);
-
-        // Provide a reliable animation time source for the shader.
-        // Some modded shader pipelines (e.g., Iris) may not always populate GameTime for custom programs.
+        // Set shader uniforms
         setUniform1f(program, "uTime", (float) (world.getTime() + tickDelta));
 
-        // Build a bobbed view matrix like the other late renderers in this mod.
+        // Build view matrix (standard late render setup)
         Matrix4f view = new Matrix4f()
             .rotation(camera.getRotation())
             .transpose()
             .translate((float) -camPos.x, (float) -camPos.y, (float) -camPos.z);
+
+        // Provide inverse view matrix so the shader can recover true world-space positions
+        Matrix4f invView = new Matrix4f(view).invert();
+        setUniformMat4(program, "uInvViewMat", invView);
 
         MatrixStack matrices = new MatrixStack();
         if (mc.options.getBobView().getValue()) {
@@ -112,277 +82,265 @@ public final class GridProjectRenderer {
         VertexConsumerProvider.Immediate immediate = mc.getBufferBuilders().getEntityVertexConsumers();
         VertexConsumer vc = immediate.getBuffer(GridProjectRenderLayer.get());
 
-        // Light + overlay (we treat this like an emissive projection)
         final int fullBright = LightmapTextureManager.pack(15, 15);
         final int overlay = OverlayTexture.DEFAULT_UV;
 
         int quadsEmitted = 0;
 
-        int r = RADIUS_BLOCKS;
-        double maxDistSq = (RADIUS_BLOCKS + 0.5) * (RADIUS_BLOCKS + 0.5);
-
-        // Hot-path allocations: avoid per-block BlockPos creation and repeated biome lookups.
         BlockPos.Mutable pos = new BlockPos.Mutable();
         BlockPos.Mutable neighborPos = new BlockPos.Mutable();
-        Long2BooleanOpenHashMap biomeIsPlainsCache = new Long2BooleanOpenHashMap();
 
-        // Keep GL state consistent: we don’t touch projection/model-view here.
         RenderSystem.disableCull();
         try {
-            // Iterate a true sphere to avoid scanning the cube corners (helps a lot at larger radii).
-            for (int dz = -r; dz <= r; dz++) {
-                int z = center.getZ() + dz;
-                int dz2 = dz * dz;
-                for (int dx = -r; dx <= r; dx++) {
-                    int x = center.getX() + dx;
-                    int dx2 = dx * dx;
+            // Iterate over each zone
+            for (ProjectionZone zone : zones) {
+                double zoneCenterX = zone.getCenterX();
+                double zoneCenterZ = zone.getCenterZ();
+                double zoneRadius = computeZoneRadius(zone);
 
-                    int dxy2 = dx2 + dz2;
-                    if (dxy2 > r * r) continue;
+                // Per-zone projection parameters (used by the shader for per-fragment ray projection)
+                setUniform1f(program, "uZoneCenterX", (float) zoneCenterX);
+                setUniform1f(program, "uZoneCenterZ", (float) zoneCenterZ);
+                setUniform1f(program, "uZoneRadius",  (float) zoneRadius);
 
-                    int maxDy = (int) Math.floor(Math.sqrt((double) (r * r - dxy2)));
-                    for (int dy = -maxDy; dy <= maxDy; dy++) {
-                        int y = center.getY() + dy;
+                BlockPos zoneMin = zone.getMin();
+                BlockPos zoneMax = zone.getMax();
 
-                    double cx = x + 0.5;
-                    double cy = y + 0.5;
-                    double cz = z + 0.5;
-                    double distSq = (cx - camPos.x) * (cx - camPos.x)
-                                  + (cy - camPos.y) * (cy - camPos.y)
-                                  + (cz - camPos.z) * (cz - camPos.z);
-                    if (distSq > maxDistSq) continue;
+                // Clamp iteration to render distance from camera
+                int minX = Math.max(zoneMin.getX(), camBlock.getX() - RENDER_DISTANCE);
+                int maxX = Math.min(zoneMax.getX(), camBlock.getX() + RENDER_DISTANCE);
+                int minY = Math.max(zoneMin.getY(), camBlock.getY() - RENDER_DISTANCE);
+                int maxY = Math.min(zoneMax.getY(), camBlock.getY() + RENDER_DISTANCE);
+                int minZ = Math.max(zoneMin.getZ(), camBlock.getZ() - RENDER_DISTANCE);
+                int maxZ = Math.min(zoneMax.getZ(), camBlock.getZ() + RENDER_DISTANCE);
 
-                    pos.set(x, y, z);
+                if (minX > maxX || minY > maxY || minZ > maxZ) continue;
 
-                    // Biome gate: only project within Plains.
-                    // This is a hard cutoff per block, which creates a clean border.
-                    // Cache biome checks at 4x4x4 "biome cell" resolution (huge win at larger radii).
-                    long biomeCellKey = BlockPos.asLong(x >> 2, y >> 2, z >> 2);
-                    boolean isPlains;
-                    if (biomeIsPlainsCache.containsKey(biomeCellKey)) {
-                        isPlains = biomeIsPlainsCache.get(biomeCellKey);
-                    } else {
-                        isPlains = world.getBiome(pos).matchesKey(BiomeKeys.PLAINS);
-                        biomeIsPlainsCache.put(biomeCellKey, isPlains);
-                    }
-                    if (!isPlains) continue;
+                for (int x = minX; x <= maxX; x++) {
+                    for (int z = minZ; z <= maxZ; z++) {
+                        for (int y = minY; y <= maxY; y++) {
+                            pos.set(x, y, z);
 
-                    BlockState state = world.getBlockState(pos);
-                    if (state.isAir()) continue;
+                            BlockState state = world.getBlockState(pos);
+                            if (state.isAir()) continue;
 
-                    // Fade with distance (make it obvious at larger radii).
-                    // t: 1 near camera -> 0 at edge.
-                    float dist = (float) Math.sqrt(distSq);
-                    float t = 1.0f - (dist / (RADIUS_BLOCKS + 0.5f));
-                    t = MathHelper.clamp(t, 0.0f, 1.0f);
+                            // Distance fade from camera
+                            double dx = x + 0.5 - camPos.x;
+                            double dy = y + 0.5 - camPos.y;
+                            double dz = z + 0.5 - camPos.z;
+                            double distSq = dx * dx + dy * dy + dz * dz;
 
-                    // Quadratic falloff: far surfaces fade out faster.
-                    float fade = t * t;
-                    if (fade <= 0.01f) continue;
+                            float dist = (float) Math.sqrt(distSq);
+                            float t = 1.0f - (dist / (RENDER_DISTANCE + 0.5f));
+                            t = MathHelper.clamp(t, 0.0f, 1.0f);
+                            float fade = t * t;
+                            if (fade <= 0.01f) continue;
 
-                    int a = (int) (fade * 255.0f);
-                    int c = (int) MathHelper.clamp(MathHelper.lerp(fade, MIN_FADE_BRIGHTNESS, 255.0f), 0.0f, 255.0f);
-
-                    // Render only exposed faces to keep polycount down.
-                    boolean showUp    = shouldRenderFace(world, pos, neighborPos, Direction.UP);
-                    boolean showDown  = shouldRenderFace(world, pos, neighborPos, Direction.DOWN);
-                    boolean showNorth = shouldRenderFace(world, pos, neighborPos, Direction.NORTH);
-                    boolean showSouth = shouldRenderFace(world, pos, neighborPos, Direction.SOUTH);
-                    boolean showWest  = shouldRenderFace(world, pos, neighborPos, Direction.WEST);
-                    boolean showEast  = shouldRenderFace(world, pos, neighborPos, Direction.EAST);
-
-                    if (!(showUp || showDown || showNorth || showSouth || showWest || showEast)) continue;
-
-                    final double wx = pos.getX();
-                    final double wy = pos.getY();
-                    final double wz = pos.getZ();
-
-                    // Fast-path: most blocks are full cubes; avoid VoxelShape iteration/lambdas.
-                    if (state.isOpaqueFullCube(world, pos)) {
-                        double x0 = wx;
-                        double y0 = wy;
-                        double z0 = wz;
-                        double x1 = wx + 1.0;
-                        double y1 = wy + 1.0;
-                        double z1 = wz + 1.0;
-
-                        // UP (y1)
-                        if (showUp) {
-                            emitQuad(vc, m,
-                                x0, y1 + SURFACE_NUDGE, z0,
-                                x1, y1 + SURFACE_NUDGE, z0,
-                                x1, y1 + SURFACE_NUDGE, z1,
-                                x0, y1 + SURFACE_NUDGE, z1,
-                                0f, 1f, 0f,
-                                c, c, c,
-                                a, overlay, fullBright
+                            int a = (int) (fade * 255.0f);
+                            int c = (int) MathHelper.clamp(
+                                MathHelper.lerp(fade, MIN_FADE_BRIGHTNESS, 255.0f),
+                                0.0f, 255.0f
                             );
-                        }
 
-                        // DOWN (y0)
-                        if (showDown) {
-                            emitQuad(vc, m,
-                                x0, y0 - SURFACE_NUDGE, z1,
-                                x1, y0 - SURFACE_NUDGE, z1,
-                                x1, y0 - SURFACE_NUDGE, z0,
-                                x0, y0 - SURFACE_NUDGE, z0,
-                                0f, -1f, 0f,
-                                c, c, c,
-                                a, overlay, fullBright
-                            );
-                        }
+                            // Check which faces are exposed
+                            boolean showUp    = shouldRenderFace(world, pos, neighborPos, Direction.UP);
+                            boolean showDown  = shouldRenderFace(world, pos, neighborPos, Direction.DOWN);
+                            boolean showNorth = shouldRenderFace(world, pos, neighborPos, Direction.NORTH);
+                            boolean showSouth = shouldRenderFace(world, pos, neighborPos, Direction.SOUTH);
+                            boolean showWest  = shouldRenderFace(world, pos, neighborPos, Direction.WEST);
+                            boolean showEast  = shouldRenderFace(world, pos, neighborPos, Direction.EAST);
 
-                        // NORTH (z0)
-                        if (showNorth) {
-                            emitQuad(vc, m,
-                                x1, y0, z0 - SURFACE_NUDGE,
-                                x0, y0, z0 - SURFACE_NUDGE,
-                                x0, y1, z0 - SURFACE_NUDGE,
-                                x1, y1, z0 - SURFACE_NUDGE,
-                                0f, 0f, -1f,
-                                c, c, c,
-                                a, overlay, fullBright
-                            );
-                        }
+                            if (!(showUp || showDown || showNorth || showSouth || showWest || showEast)) continue;
 
-                        // SOUTH (z1)
-                        if (showSouth) {
-                            emitQuad(vc, m,
-                                x0, y0, z1 + SURFACE_NUDGE,
-                                x1, y0, z1 + SURFACE_NUDGE,
-                                x1, y1, z1 + SURFACE_NUDGE,
-                                x0, y1, z1 + SURFACE_NUDGE,
-                                0f, 0f, 1f,
-                                c, c, c,
-                                a, overlay, fullBright
-                            );
-                        }
+                            final double wx = pos.getX();
+                            final double wy = pos.getY();
+                            final double wz = pos.getZ();
 
-                        // WEST (x0)
-                        if (showWest) {
-                            emitQuad(vc, m,
-                                x0 - SURFACE_NUDGE, y0, z0,
-                                x0 - SURFACE_NUDGE, y0, z1,
-                                x0 - SURFACE_NUDGE, y1, z1,
-                                x0 - SURFACE_NUDGE, y1, z0,
-                                -1f, 0f, 0f,
-                                c, c, c,
-                                a, overlay, fullBright
-                            );
-                        }
+                            if (state.isOpaqueFullCube(world, pos)) {
+                                double x0 = wx;
+                                double y0 = wy;
+                                double z0 = wz;
+                                double x1 = wx + 1.0;
+                                double y1 = wy + 1.0;
+                                double z1 = wz + 1.0;
 
-                        // EAST (x1)
-                        if (showEast) {
-                            emitQuad(vc, m,
-                                x1 + SURFACE_NUDGE, y0, z1,
-                                x1 + SURFACE_NUDGE, y0, z0,
-                                x1 + SURFACE_NUDGE, y1, z0,
-                                x1 + SURFACE_NUDGE, y1, z1,
-                                1f, 0f, 0f,
-                                c, c, c,
-                                a, overlay, fullBright
-                            );
-                        }
-                    } else {
-                        VoxelShape shape = state.getOutlineShape(world, pos);
-                        if (shape.isEmpty()) continue;
+                                // UP face
+                                if (showUp) {
+                                    emitQuadHorizontal(vc, m,
+                                        x0, y1 + SURFACE_NUDGE, z0,
+                                        x1, y1 + SURFACE_NUDGE, z0,
+                                        x1, y1 + SURFACE_NUDGE, z1,
+                                        x0, y1 + SURFACE_NUDGE, z1,
+                                        c, c, c, a, overlay, fullBright,
+                                        zoneCenterX, zoneCenterZ, zoneRadius
+                                    );
+                                }
 
-                        shape.forEachBox((minX, minY, minZ, maxX, maxY, maxZ) -> {
-                            // NOTE: Each face emitted here is a QUAD.
-                            // We intentionally nudge it slightly outward to avoid z-fighting.
+                                // DOWN face
+                                if (showDown) {
+                                    emitQuadHorizontal(vc, m,
+                                        x0, y0 - SURFACE_NUDGE, z1,
+                                        x1, y0 - SURFACE_NUDGE, z1,
+                                        x1, y0 - SURFACE_NUDGE, z0,
+                                        x0, y0 - SURFACE_NUDGE, z0,
+                                        c, c, c, a, overlay, fullBright,
+                                        zoneCenterX, zoneCenterZ, zoneRadius
+                                    );
+                                }
 
-                            double x0 = wx + minX;
-                            double y0 = wy + minY;
-                            double z0 = wz + minZ;
-                            double x1 = wx + maxX;
-                            double y1 = wy + maxY;
-                            double z1 = wz + maxZ;
+                                // NORTH (-Z)
+                                if (showNorth) {
+                                    emitQuadWithWorldPos(vc, m,
+                                        x1, y0, z0 - SURFACE_NUDGE,
+                                        x0, y0, z0 - SURFACE_NUDGE,
+                                        x0, y1, z0 - SURFACE_NUDGE,
+                                        x1, y1, z0 - SURFACE_NUDGE,
+                                        c, c, c, a, overlay, fullBright,
+                                        zoneCenterX, zoneCenterZ, zoneRadius,
+                                        true
+                                    );
+                                }
 
-                            // UP (y1)
-                            if (showUp) {
-                                emitQuad(vc, m,
-                                    x0, y1 + SURFACE_NUDGE, z0,
-                                    x1, y1 + SURFACE_NUDGE, z0,
-                                    x1, y1 + SURFACE_NUDGE, z1,
-                                    x0, y1 + SURFACE_NUDGE, z1,
-                                    0f, 1f, 0f,
-                                    c, c, c,
-                                    a, overlay, fullBright
-                                );
+                                // SOUTH (+Z)
+                                if (showSouth) {
+                                    emitQuadWithWorldPos(vc, m,
+                                        x0, y0, z1 + SURFACE_NUDGE,
+                                        x1, y0, z1 + SURFACE_NUDGE,
+                                        x1, y1, z1 + SURFACE_NUDGE,
+                                        x0, y1, z1 + SURFACE_NUDGE,
+                                        c, c, c, a, overlay, fullBright,
+                                        zoneCenterX, zoneCenterZ, zoneRadius,
+                                        true
+                                    );
+                                }
+
+                                // WEST (-X)
+                                if (showWest) {
+                                    emitQuadWithWorldPos(vc, m,
+                                        x0 - SURFACE_NUDGE, y0, z0,
+                                        x0 - SURFACE_NUDGE, y0, z1,
+                                        x0 - SURFACE_NUDGE, y1, z1,
+                                        x0 - SURFACE_NUDGE, y1, z0,
+                                        c, c, c, a, overlay, fullBright,
+                                        zoneCenterX, zoneCenterZ, zoneRadius,
+                                        true
+                                    );
+                                }
+
+                                // EAST (+X)
+                                if (showEast) {
+                                    emitQuadWithWorldPos(vc, m,
+                                        x1 + SURFACE_NUDGE, y0, z1,
+                                        x1 + SURFACE_NUDGE, y0, z0,
+                                        x1 + SURFACE_NUDGE, y1, z0,
+                                        x1 + SURFACE_NUDGE, y1, z1,
+                                        c, c, c, a, overlay, fullBright,
+                                        zoneCenterX, zoneCenterZ, zoneRadius,
+                                        true
+                                    );
+                                }
+                            } else {
+                                VoxelShape shape = state.getOutlineShape(world, pos);
+                                if (shape.isEmpty()) continue;
+
+                                final int fc = c;
+                                final int fa = a;
+                                final double fZoneCenterX = zoneCenterX;
+                                final double fZoneCenterZ = zoneCenterZ;
+                                final double fZoneRadius = zoneRadius;
+
+                                final boolean fShowUp = showUp;
+                                final boolean fShowDown = showDown;
+                                final boolean fShowNorth = showNorth;
+                                final boolean fShowSouth = showSouth;
+                                final boolean fShowWest = showWest;
+                                final boolean fShowEast = showEast;
+
+                                shape.forEachBox((minBX, minBY, minBZ, maxBX, maxBY, maxBZ) -> {
+                                    double bx0 = wx + minBX;
+                                    double by0 = wy + minBY;
+                                    double bz0 = wz + minBZ;
+                                    double bx1 = wx + maxBX;
+                                    double by1 = wy + maxBY;
+                                    double bz1 = wz + maxBZ;
+
+                                    if (fShowUp) {
+                                        emitQuadHorizontal(vc, m,
+                                            bx0, by1 + SURFACE_NUDGE, bz0,
+                                            bx1, by1 + SURFACE_NUDGE, bz0,
+                                            bx1, by1 + SURFACE_NUDGE, bz1,
+                                            bx0, by1 + SURFACE_NUDGE, bz1,
+                                            fc, fc, fc, fa, overlay, fullBright,
+                                            fZoneCenterX, fZoneCenterZ, fZoneRadius
+                                        );
+                                    }
+
+                                    if (fShowDown) {
+                                        emitQuadHorizontal(vc, m,
+                                            bx0, by0 - SURFACE_NUDGE, bz1,
+                                            bx1, by0 - SURFACE_NUDGE, bz1,
+                                            bx1, by0 - SURFACE_NUDGE, bz0,
+                                            bx0, by0 - SURFACE_NUDGE, bz0,
+                                            fc, fc, fc, fa, overlay, fullBright,
+                                            fZoneCenterX, fZoneCenterZ, fZoneRadius
+                                        );
+                                    }
+
+                                    if (fShowNorth) {
+                                        emitQuadWithWorldPos(vc, m,
+                                            bx1, by0, bz0 - SURFACE_NUDGE,
+                                            bx0, by0, bz0 - SURFACE_NUDGE,
+                                            bx0, by1, bz0 - SURFACE_NUDGE,
+                                            bx1, by1, bz0 - SURFACE_NUDGE,
+                                            fc, fc, fc, fa, overlay, fullBright,
+                                            fZoneCenterX, fZoneCenterZ, fZoneRadius,
+                                            true
+                                        );
+                                    }
+
+                                    if (fShowSouth) {
+                                        emitQuadWithWorldPos(vc, m,
+                                            bx0, by0, bz1 + SURFACE_NUDGE,
+                                            bx1, by0, bz1 + SURFACE_NUDGE,
+                                            bx1, by1, bz1 + SURFACE_NUDGE,
+                                            bx0, by1, bz1 + SURFACE_NUDGE,
+                                            fc, fc, fc, fa, overlay, fullBright,
+                                            fZoneCenterX, fZoneCenterZ, fZoneRadius,
+                                            true
+                                        );
+                                    }
+
+                                    if (fShowWest) {
+                                        emitQuadWithWorldPos(vc, m,
+                                            bx0 - SURFACE_NUDGE, by0, bz0,
+                                            bx0 - SURFACE_NUDGE, by0, bz1,
+                                            bx0 - SURFACE_NUDGE, by1, bz1,
+                                            bx0 - SURFACE_NUDGE, by1, bz0,
+                                            fc, fc, fc, fa, overlay, fullBright,
+                                            fZoneCenterX, fZoneCenterZ, fZoneRadius,
+                                            true
+                                        );
+                                    }
+
+                                    if (fShowEast) {
+                                        emitQuadWithWorldPos(vc, m,
+                                            bx1 + SURFACE_NUDGE, by0, bz1,
+                                            bx1 + SURFACE_NUDGE, by0, bz0,
+                                            bx1 + SURFACE_NUDGE, by1, bz0,
+                                            bx1 + SURFACE_NUDGE, by1, bz1,
+                                            fc, fc, fc, fa, overlay, fullBright,
+                                            fZoneCenterX, fZoneCenterZ, fZoneRadius,
+                                            true
+                                        );
+                                    }
+                                });
                             }
 
-                            // DOWN (y0)
-                            if (showDown) {
-                                emitQuad(vc, m,
-                                    x0, y0 - SURFACE_NUDGE, z1,
-                                    x1, y0 - SURFACE_NUDGE, z1,
-                                    x1, y0 - SURFACE_NUDGE, z0,
-                                    x0, y0 - SURFACE_NUDGE, z0,
-                                    0f, -1f, 0f,
-                                    c, c, c,
-                                    a, overlay, fullBright
-                                );
+                            quadsEmitted += 6;
+                            if (quadsEmitted >= MAX_QUADS) {
+                                immediate.draw();
+                                return;
                             }
-
-                            // NORTH (z0)
-                            if (showNorth) {
-                                emitQuad(vc, m,
-                                    x1, y0, z0 - SURFACE_NUDGE,
-                                    x0, y0, z0 - SURFACE_NUDGE,
-                                    x0, y1, z0 - SURFACE_NUDGE,
-                                    x1, y1, z0 - SURFACE_NUDGE,
-                                    0f, 0f, -1f,
-                                    c, c, c,
-                                    a, overlay, fullBright
-                                );
-                            }
-
-                            // SOUTH (z1)
-                            if (showSouth) {
-                                emitQuad(vc, m,
-                                    x0, y0, z1 + SURFACE_NUDGE,
-                                    x1, y0, z1 + SURFACE_NUDGE,
-                                    x1, y1, z1 + SURFACE_NUDGE,
-                                    x0, y1, z1 + SURFACE_NUDGE,
-                                    0f, 0f, 1f,
-                                    c, c, c,
-                                    a, overlay, fullBright
-                                );
-                            }
-
-                            // WEST (x0)
-                            if (showWest) {
-                                emitQuad(vc, m,
-                                    x0 - SURFACE_NUDGE, y0, z0,
-                                    x0 - SURFACE_NUDGE, y0, z1,
-                                    x0 - SURFACE_NUDGE, y1, z1,
-                                    x0 - SURFACE_NUDGE, y1, z0,
-                                    -1f, 0f, 0f,
-                                    c, c, c,
-                                    a, overlay, fullBright
-                                );
-                            }
-
-                            // EAST (x1)
-                            if (showEast) {
-                                emitQuad(vc, m,
-                                    x1 + SURFACE_NUDGE, y0, z1,
-                                    x1 + SURFACE_NUDGE, y0, z0,
-                                    x1 + SURFACE_NUDGE, y1, z0,
-                                    x1 + SURFACE_NUDGE, y1, z1,
-                                    1f, 0f, 0f,
-                                    c, c, c,
-                                    a, overlay, fullBright
-                                );
-                            }
-                        });
-                    }
-
-                        // Rough poly cap (we can’t count inside forEachBox cheaply; this is a conservative limiter)
-                        quadsEmitted += 6;
-                        if (quadsEmitted >= MAX_QUADS) {
-                            immediate.draw();
-                            return;
                         }
                     }
                 }
@@ -397,19 +355,8 @@ public final class GridProjectRenderer {
     private static boolean shouldRenderFace(World world, BlockPos.Mutable pos, BlockPos.Mutable neighborPos, Direction dir) {
         neighborPos.set(pos).move(dir);
         BlockState neighbor = world.getBlockState(neighborPos);
-
-        // Treat air as exposed.
         if (neighbor.isAir()) return true;
-
-        // If the neighbor is not a full opaque cube, we still want the projection visible.
-        // This keeps the effect showing on surfaces adjacent to e.g. leaves, glass, etc.
         return !neighbor.isOpaqueFullCube(world, neighborPos);
-    }
-
-    private static void setUniform2f(ShaderProgram program, String name, float x, float y) {
-        if (program == null) return;
-        GlUniform u = program.getUniform(name);
-        if (u != null) u.set(x, y);
     }
 
     private static void setUniform1f(ShaderProgram program, String name, float x) {
@@ -418,61 +365,227 @@ public final class GridProjectRenderer {
         if (u != null) u.set(x);
     }
 
-    private static void setUniform4f(ShaderProgram program, String name, float x, float y, float z, float w) {
-        if (program == null) return;
+    private static void setUniformMat4(ShaderProgram program, String name, Matrix4f mat) {
+        if (program == null || mat == null) return;
         GlUniform u = program.getUniform(name);
-        if (u != null) u.set(x, y, z, w);
+        if (u != null) u.set(mat);
     }
 
-    private static float wrapRad(float a) {
-        final float pi = (float) Math.PI;
-        final float twoPi = (float) (Math.PI * 2.0);
-        while (a <= -pi) a += twoPi;
-        while (a > pi) a -= twoPi;
-        return a;
+    /**
+     * Square-cylinder projector radius that encloses the zone, measured from its center.
+     * This controls the square perimeter length: period = 8 * radius.
+     */
+    private static double computeZoneRadius(ProjectionZone zone) {
+        double cx = zone.getCenterX();
+        double cz = zone.getCenterZ();
+
+        BlockPos min = zone.getMin();
+        BlockPos max = zone.getMax();
+
+        // use outer boundary (max + 1) so the perimeter encloses the full blocks
+        double maxDx = Math.max(Math.abs(min.getX() - cx), Math.abs((max.getX() + 1) - cx));
+        double maxDz = Math.max(Math.abs(min.getZ() - cz), Math.abs((max.getZ() + 1) - cz));
+        return Math.max(maxDx, maxDz);
     }
-    private static void emitQuad(
+
+    /**
+     * Emits a quad with square-cylinder projection from zone center (for vertical faces).
+     *
+     * UV0.x = perimeter distance around square boundary (wraps around corners)
+     * UV0.y = world Y height
+     */
+    private static void emitQuadWithWorldPos(
         VertexConsumer vc,
         Matrix4f m,
         double x0, double y0, double z0,
         double x1, double y1, double z1,
         double x2, double y2, double z2,
         double x3, double y3, double z3,
-        float nx, float ny, float nz,
-        int r,
-        int g,
-        int b,
-        int a,
-        int overlay,
-        int light
+        int r, int g, int b, int a,
+        int overlay, int light,
+        double zoneCenterX, double zoneCenterZ,
+        double zoneRadius,
+        boolean fixPerimeterWrap
     ) {
-        // Color is white; shader turns it cyan. Vertex alpha controls fade.
-        vc.vertex(m, (float) x0, (float) y0, (float) z0)
-            .color(r, g, b, a)
-            .texture(0f, 0f)
-            .overlay(overlay)
-            .light(light)
-            .normal(nx, ny, nz);
+        float u0 = computeSquarePerimeterU(x0, z0, zoneCenterX, zoneCenterZ, zoneRadius);
+        float u1 = computeSquarePerimeterU(x1, z1, zoneCenterX, zoneCenterZ, zoneRadius);
+        float u2 = computeSquarePerimeterU(x2, z2, zoneCenterX, zoneCenterZ, zoneRadius);
+        float u3 = computeSquarePerimeterU(x3, z3, zoneCenterX, zoneCenterZ, zoneRadius);
 
-        vc.vertex(m, (float) x1, (float) y1, (float) z1)
-            .color(r, g, b, a)
-            .texture(1f, 0f)
-            .overlay(overlay)
-            .light(light)
-            .normal(nx, ny, nz);
+        if (fixPerimeterWrap) {
+            float period = (float) (8.0 * Math.max(zoneRadius, 1e-6));
+            float[] us = {u0, u1, u2, u3};
+            fixUvWrappingPerimeter(us, period);
+            u0 = us[0]; u1 = us[1]; u2 = us[2]; u3 = us[3];
+        }
 
-        vc.vertex(m, (float) x2, (float) y2, (float) z2)
+        vc.vertex(m, (float)x0, (float)y0, (float)z0)
             .color(r, g, b, a)
-            .texture(1f, 1f)
+            .texture(u0, (float)y0)
             .overlay(overlay)
-            .light(light)
-            .normal(nx, ny, nz);
+            .light(light);
 
-        vc.vertex(m, (float) x3, (float) y3, (float) z3)
+        vc.vertex(m, (float)x1, (float)y1, (float)z1)
             .color(r, g, b, a)
-            .texture(0f, 1f)
+            .texture(u1, (float)y1)
             .overlay(overlay)
-            .light(light)
-            .normal(nx, ny, nz);
+            .light(light);
+
+        vc.vertex(m, (float)x2, (float)y2, (float)z2)
+            .color(r, g, b, a)
+            .texture(u2, (float)y2)
+            .overlay(overlay)
+            .light(light);
+
+        vc.vertex(m, (float)x3, (float)y3, (float)z3)
+            .color(r, g, b, a)
+            .texture(u3, (float)y3)
+            .overlay(overlay)
+            .light(light);
+    }
+
+    /**
+     * Emits a quad for horizontal faces (UP/DOWN) with radial projection from zone center.
+     * Like 4 projectors at the center facing N/S/E/W, projecting onto the floor/ceiling.
+     *
+     * UV.x = perimeter position around the center (same coordinate system as vertical walls)
+     * UV.y = distance from the zone center (so grid lines converge toward center)
+     */
+    private static void emitQuadHorizontal(
+        VertexConsumer vc,
+        Matrix4f m,
+        double x0, double y0, double z0,
+        double x1, double y1, double z1,
+        double x2, double y2, double z2,
+        double x3, double y3, double z3,
+        int r, int g, int b, int a,
+        int overlay, int light,
+        double zoneCenterX, double zoneCenterZ,
+        double zoneRadius
+    ) {
+        // U = perimeter position (same as vertical faces for seamless wrapping)
+        // V = world Y height (matches vertical faces; top/bottom become converging spokes)
+        float u0 = computeSquarePerimeterU(x0, z0, zoneCenterX, zoneCenterZ, zoneRadius);
+        float u1 = computeSquarePerimeterU(x1, z1, zoneCenterX, zoneCenterZ, zoneRadius);
+        float u2 = computeSquarePerimeterU(x2, z2, zoneCenterX, zoneCenterZ, zoneRadius);
+        float u3 = computeSquarePerimeterU(x3, z3, zoneCenterX, zoneCenterZ, zoneRadius);
+
+        // Fix wrapping for quads that cross the seam
+        float period = (float) (8.0 * Math.max(zoneRadius, 1e-6));
+        float[] us = {u0, u1, u2, u3};
+        fixUvWrappingPerimeter(us, period);
+        u0 = us[0]; u1 = us[1]; u2 = us[2]; u3 = us[3];
+
+        // V = world Y height (square-cylinder projection)
+        // This makes the top/bottom faces show straight "spokes" that converge to the zone center,
+        // matching the raycast-perimeter U mapping used on the walls.
+        float v0 = (float) y0;
+        float v1 = (float) y1;
+        float v2 = (float) y2;
+        float v3 = (float) y3;
+
+        
+
+        vc.vertex(m, (float)x0, (float)y0, (float)z0)
+            .color(r, g, b, a)
+            .texture(u0, v0)
+            .overlay(overlay)
+            .light(light);
+
+        vc.vertex(m, (float)x1, (float)y1, (float)z1)
+            .color(r, g, b, a)
+            .texture(u1, v1)
+            .overlay(overlay)
+            .light(light);
+
+        vc.vertex(m, (float)x2, (float)y2, (float)z2)
+            .color(r, g, b, a)
+            .texture(u2, v2)
+            .overlay(overlay)
+            .light(light);
+
+        vc.vertex(m, (float)x3, (float)y3, (float)z3)
+            .color(r, g, b, a)
+            .texture(u3, v3)
+            .overlay(overlay)
+            .light(light);
+    }
+
+    /**
+     * Computes square-cylinder perimeter U coordinate:
+     * - Shoot a ray from the zone center through the vertex (XZ plane)
+     * - Intersect it with the square boundary of radius R (max(|x|,|z|)=R)
+     * - Convert boundary point to continuous perimeter distance [0..8R)
+     */
+    private static float computeSquarePerimeterU(double worldX, double worldZ,
+                                                 double centerX, double centerZ,
+                                                 double radius) {
+        double R = Math.max(radius, 1e-6);
+
+        double rx = worldX - centerX;
+        double rz = worldZ - centerZ;
+
+        double len = Math.sqrt(rx * rx + rz * rz);
+        // Stable fallback direction if we are exactly at center
+        double dx = (len > 1e-9) ? (rx / len) : 1.0;
+        double dz = (len > 1e-9) ? (rz / len) : 0.0;
+
+        // Ray-square boundary intersection (scale so max(|x|,|z|)=R)
+        double m = Math.max(Math.abs(dx), Math.abs(dz));
+        if (m < 1e-9) m = 1.0;
+
+        double hx = dx * (R / m);
+        double hz = dz * (R / m);
+
+        // Convert boundary point to perimeter distance [0..8R)
+        // Origin at (x=+R, z=-R), increasing CCW: East -> North -> West -> South
+        double ax = Math.abs(hx);
+        double az = Math.abs(hz);
+
+        double u;
+        if (ax >= az) {
+            if (hx >= 0.0) {
+                // East side: x=+R, z:-R..R
+                u = hz + R;                 // [0..2R)
+            } else {
+                // West side: x=-R, z:R..-R
+                u = 4.0 * R + (R - hz);     // [4R..6R)
+            }
+        } else {
+            if (hz >= 0.0) {
+                // North side: z=+R, x:R..-R
+                u = 2.0 * R + (R - hx);     // [2R..4R)
+            } else {
+                // South side: z=-R, x:-R..R
+                u = 6.0 * R + (hx + R);     // [6R..8R)
+            }
+        }
+
+        double perim = 8.0 * R;
+        u = u % perim;
+        if (u < 0.0) u += perim;
+
+        return (float) u;
+    }
+
+    /**
+     * Fix wrapping for a quad crossing the seam at U=0/perimeter.
+     * If the quad spans more than half the perimeter, shift the low side up by +period.
+     */
+    private static void fixUvWrappingPerimeter(float[] us, float period) {
+        if (period <= 0.0f) return;
+
+        float uMin = us[0], uMax = us[0];
+        for (int i = 1; i < 4; i++) {
+            uMin = Math.min(uMin, us[i]);
+            uMax = Math.max(uMax, us[i]);
+        }
+
+        if (uMax - uMin > period * 0.5f) {
+            float mid = (uMin + uMax) * 0.5f;
+            for (int i = 0; i < 4; i++) {
+                if (us[i] < mid) us[i] += period;
+            }
+        }
     }
 }

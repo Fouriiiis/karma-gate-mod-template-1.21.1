@@ -1,23 +1,20 @@
 #version 150
 // ============================================================
-// FLAT (screen-space) + seamless wrap + smooth scan bands + SINGLE cursor box
+// Square-cylinder projection shader (4 projectors at center)
 //
-// Changes from your provided shader:
-//  - Removed tunnel/cylinder projection (pattern is flat in screen space)
-//  - Removed ALL focus point / focus screen logic + uniforms
-//  - Kept: seamless wrapping, drift+snap, glyph field, scan bands,
-//          single cursor (1..3), filled invert cutout, 2-parallel crosshair lines
-//  - Grid lines are only hinted near cursor/crosshair
+// UV coordinates from vertex shader (computed in renderer):
+//   vWorldUV.x = unfolded perimeter distance around a square cylinder
+//                centered on the zone center. This wraps seamlessly
+//                around corners (N->E->S->W).
+//   vWorldUV.y = world Y height
+//
+// The grid animation + glyph logic remains unchanged.
 // ============================================================
 
 uniform sampler2D Sampler0;
 
-uniform vec2  uInvScreenSize;
-uniform vec2  uScrollUV;        // (unused here, kept for compatibility)
 uniform float uGridCells;
 uniform float uLineWidthPx;
-uniform float uFovScale;        // (unused here, kept for compatibility)
-uniform float uCamY;            // (unused here, kept for compatibility)
 uniform float uOpacity;
 uniform float uEffectAmount;
 uniform float uElectricPower;
@@ -27,6 +24,13 @@ uniform float uAnimSpeed;
 uniform float GameTime;
 
 in vec4 vColor;
+in vec2 vWorldUV;  // x = square-perimeter U, y = world Y
+in vec3 vWorldPos; // true world-space position (reconstructed in vertex shader)
+
+// Zone projection parameters (set per-zone by the renderer)
+uniform float uZoneCenterX;
+uniform float uZoneCenterZ;
+uniform float uZoneRadius;
 out vec4 fragColor;
 
 // ---------- Hash helpers ----------
@@ -45,7 +49,73 @@ float saturate(float x) { return clamp(x, 0.0, 1.0); }
 
 // Positive modulo for floats
 float pmod(float x, float m) { return mod(mod(x, m) + m, m); }
+
+// Periodic distance on a ring [0, period)
+float ringDist(float a, float b, float period) {
+    float d = abs(a - b);
+    return min(d, period - d);
+}
+
 vec2  pmod2(vec2 x, float m) { return vec2(pmod(x.x, m), pmod(x.y, m)); }
+
+
+// ============================================================
+// Per-fragment square-cylinder ray projection (prevents curved lines on big quads)
+// Matches GridProjectRenderer.computeSquarePerimeterU(...)
+// ============================================================
+float computeSquarePerimeterU_ws(float worldX, float worldZ, float centerX, float centerZ, float radius) {
+    float R = max(radius, 1e-6);
+
+    float rx = worldX - centerX;
+    float rz = worldZ - centerZ;
+
+    float len = sqrt(rx * rx + rz * rz);
+    float dx = (len > 1e-9) ? (rx / len) : 1.0;
+    float dz = (len > 1e-9) ? (rz / len) : 0.0;
+
+    // Ray-square boundary intersection (scale so max(|x|,|z|)=R)
+    float m = max(abs(dx), abs(dz));
+    if (m < 1e-9) m = 1.0;
+
+    float hx = dx * (R / m);
+    float hz = dz * (R / m);
+
+    // Convert boundary point to perimeter distance [0..8R)
+    // Origin at (x=+R, z=-R), increasing CCW: East -> North -> West -> South
+    float ax = abs(hx);
+    float az = abs(hz);
+
+    float u;
+    if (ax >= az) {
+        if (hx >= 0.0) {
+            // East side: x=+R, z:-R..R
+            u = hz + R;                 // [0..2R)
+        } else {
+            // West side: x=-R, z:R..-R
+            u = 4.0 * R + (R - hz);     // [4R..6R)
+        }
+    } else {
+        if (hz >= 0.0) {
+            // North side: z=+R, x:R..-R
+            u = 2.0 * R + (R - hx);     // [2R..4R)
+        } else {
+            // South side: z=-R, x:-R..R
+            u = 6.0 * R + (hx + R);     // [6R..8R)
+        }
+    }
+
+    // IMPORTANT:
+    // We do NOT wrap with mod() here.
+    // Keeping u continuous eliminates the visible seam caused by the 8R->0 jump at the chosen seam corner.
+    //
+    // To mimic the Java-side "per-quad seam fix", we shift the EAST/SOUTH corner region forward by +perim
+    // so values near (x=+R, z=-R) become ~8R instead of ~0R.
+    float perim = 8.0 * R;
+
+    // If we're on the east side in the south half (hz < 0), push forward by one full wrap.
+    // This moves the branch cut away from that corner and makes the pattern loop cleanly there.
+    return u;
+}
 
 // wrap-safe: is i within [start, start+size) on a ring of length period?
 float inRangeWrap(float i, float start, float size, float period) {
@@ -70,9 +140,6 @@ float sampleGlyph(vec2 cellUV, float glyphIndex, float pad, float edgeLo, float 
 }
 
 void main() {
-    vec2 screenUV = gl_FragCoord.xy * uInvScreenSize;
-    if (screenUV.x < 0.0 || screenUV.x > 1.0 || screenUV.y < 0.0 || screenUV.y > 1.0) discard;
-
     // ---- ticks ----
     float tTick = (GameTime != 0.0) ? (GameTime * 24000.0) : uTime;
 
@@ -88,59 +155,88 @@ void main() {
     float baseOpacity = uOpacity * vColor.a * flickerA;
 
     // ============================================================
-    // FLAT base coordinates (screen tiling)
+    // Square-cylinder projection coordinates
     // ============================================================
-    // Make the pattern wrap seamlessly on screen: treat UV as a torus.
-    // We keep vWrap stable (no camera Y now).
-    float uWrap = fract(screenUV.x);
-    float vWrap = fract(screenUV.y);
+    float cells = max(floor(uGridCells + 0.5), 1.0);
 
-    // 50% denser grid (smaller)
-    float cellsF = floor(uGridCells * 1.5 + 0.5);
-    float cells  = max(cellsF, 1.0);
+    // vWorldUV.x = unfolded square perimeter U (wraps around corners)
+    // vWorldUV.y = world Y
+    // Compute projection per-fragment from true world position (prevents interpolation warping)
+    float uPerim = computeSquarePerimeterU_ws(vWorldPos.x, vWorldPos.z, uZoneCenterX, uZoneCenterZ, uZoneRadius);
 
-    vec2 gBase = vec2(uWrap, vWrap) * cells;
+    // Choose a continuous unwrap of uPerim that matches the per-vertex reference (vWorldUV.x).
+    // This avoids derivative-heuristic seams that can appear mid-wall on some meshes.
+    float perim = 8.0 * max(uZoneRadius, 1e-6);
+    float uRaw = pmod(uPerim, perim);
+
+    // vWorldUV.x comes from the renderer and is already made continuous per-quad.
+    float uRef = vWorldUV.x;
+
+    float u0 = uRaw;
+    float u1 = uRaw + perim;
+    float u2 = uRaw - perim;
+
+    float uCont = u0;
+    if (abs(u1 - uRef) < abs(uCont - uRef)) uCont = u1;
+    if (abs(u2 - uRef) < abs(uCont - uRef)) uCont = u2;
+
+    vec2 gBase = vec2(uCont, vWorldPos.y);
 
     // ============================================================
-    // Drift + snap steps (periodic)
+    // Drift + snap steps (periodic animation)
     // ============================================================
-    const float cellPx = 15.0;
-    const float snapPx = 30.0;
+    const float cellPx = 1.0;  // 1 block = 1 cell
+    const float snapPx = 2.0;
 
-    vec2 baseVel = vec2(2.9, 2.1) * (0.85 + 0.15 * anim) * anim;
+    // Make the *pattern* itself tile seamlessly around the square-perimeter loop.
+    // This ensures U≈0 and U≈perim render identical content.
+    float perimCells = max(floor(perim / cellPx + 0.5), 1.0);
+
+    vec2 baseVel = vec2(0.029, 0.021) * (0.85 + 0.15 * anim) * anim;
 
     vec2 wobble =
-        vec2(10.0 * sin(tTick * 0.090) + 5.0 * sin(tTick * 0.173 + 1.7),
-             8.0  * cos(tTick * 0.081) + 4.0 * sin(tTick * 0.161 + 3.2));
+        vec2(0.1 * sin(tTick * 0.090) + 0.05 * sin(tTick * 0.173 + 1.7),
+             0.08 * cos(tTick * 0.081) + 0.04 * sin(tTick * 0.161 + 3.2));
 
-    vec2 scrollPx = tTick * baseVel + wobble;
+    vec2 scrollOffset = tTick * baseVel + wobble;
 
-    vec2 k = floor((scrollPx + vec2(cellPx)) / snapPx);
-    vec2 gridPosPx = scrollPx - k * snapPx;
+    vec2 k = floor((scrollOffset + vec2(cellPx)) / snapPx);
+    vec2 gridPosPx = scrollOffset - k * snapPx;
     vec2 cellShift = 2.0 * k;
     vec2 gridOffsetCells = gridPosPx / cellPx;
-    gridOffsetCells += vec2(0.0, -1.0 / cellPx);
 
     vec2 gRender = gBase + gridOffsetCells;
-    gRender = fract(gRender / cells) * cells;
 
-    vec2 cellId = floor(gRender);
-    vec2 cellUV = fract(gRender);
+    // Wrap the X coordinate onto a ring of length perimCells.
+    float gxLoop = pmod(gRender.x, perimCells);
 
-    vec2 logicalCellId = pmod2(cellId + cellShift, cells);
+    // Keep anti-aliasing stable across the wrap by locally unwrapping based on derivatives.
+    float gxLoopCont = gxLoop;
+    float dg = max(abs(dFdx(gxLoop)), abs(dFdy(gxLoop)));
+    if (dg > perimCells * 0.5) {
+        if (gxLoop < perimCells * 0.5) gxLoopCont += perimCells;
+    }
+
+    vec2 gRenderAA = vec2(gxLoopCont, gRender.y);
+
+    vec2 cellId = vec2(floor(gxLoop), floor(gRender.y));
+    vec2 cellUV = fract(gRenderAA);
+
+    vec2 logicalCellId = cellId + cellShift;
+    logicalCellId.x = pmod(logicalCellId.x, perimCells);
 
     // ============================================================
-    // Grid lines (only shown near cursor/crosshair)
+    // Grid lines
     // ============================================================
-    vec2 fw = fwidth(gRender);
+    vec2 fw = fwidth(gRenderAA);
     float linePx = max(uLineWidthPx, 0.25);
-    float lw = 0.5 * (linePx / cellPx);
+    float lw = 0.5 * linePx;
 
     float gx = min(cellUV.x, 1.0 - cellUV.x);
     float gy = min(cellUV.y, 1.0 - cellUV.y);
 
-    float gridLineX = 1.0 - smoothstep(lw, lw + fw.x, gx);
-    float gridLineY = 1.0 - smoothstep(lw, lw + fw.y, gy);
+    float gridLineX = 1.0 - smoothstep(lw, lw + fw.x * 2.0, gx);
+    float gridLineY = 1.0 - smoothstep(lw, lw + fw.y * 2.0, gy);
     float gridLine  = max(gridLineX, gridLineY);
 
     // ============================================================
@@ -170,13 +266,16 @@ void main() {
     float glyphA = glyphCore * present * alive * baseOpacity * (0.55 + 0.75 * shimmer);
 
     // ============================================================
-    // Smooth scan bands (visual only) in GRID-PIXEL space
+    // Smooth scan bands (visual only)
     // ============================================================
-    float widthPx  = cells * cellPx;
-    float heightPx = cells * cellPx;
+    float widthPx  = 20.0;
+    float heightPx = 20.0;
 
-    vec2 pPx = gRender * cellPx;
-    float x = pmod(pPx.x, widthPx);
+    // Ensure scan-band math is also periodic around the perimeter loop.
+    // First wrap to the perimeter length, then apply the band period.
+    vec2 pPx = gRenderAA;
+    float xPer = pmod(pPx.x, perimCells);
+    float x = pmod(xPer, widthPx);
     float y = pmod(pPx.y, heightPx);
 
     float scanBandsA = 0.0;
@@ -187,87 +286,85 @@ void main() {
 
         float align = step(0.35, hash11(fi + 9.13));
         float span  = (align > 0.5) ? widthPx : heightPx;
-        float base  = hash11(fi + 2.19) * (span + 800.0) - 400.0;
+        float base  = hash11(fi + 2.19) * (span + 40.0) - 20.0;
 
         float dir   = (hash11(fi + 4.71) < 0.5) ? -1.0 : 1.0;
-        float speed = mix(2.0, 10.0, hash11(fi + 0.37)) * dir;
+        float speed = mix(0.02, 0.10, hash11(fi + 0.37)) * dir;
 
-        float jitter = (hash11(fi + 6.6) - 0.5) * 6.0 * sin(tTick * 0.13 + fi);
+        float jitter = (hash11(fi + 6.6) - 0.5) * 0.3 * sin(tTick * 0.13 + fi);
         float pos = pmod(base + tTick * speed * (1.0 + 0.25 * anim) + jitter, span);
 
         float coord = (align > 0.5) ? x : y;
 
-        float wB = 1.8 + 0.8 * hash11(fi + 12.3);
+        float wB = 0.12 + 0.05 * hash11(fi + 12.3);
 
-        float d0 = abs(coord - pos);
-        float d1 = abs(coord - (pos + cellPx));
-        float d2 = abs(coord - (pos + 2.0 * cellPx));
+        float d0 = ringDist(coord, pos, span);
+        float pos2 = pmod(pos + 1.0, span);
+        float d1 = ringDist(coord, pos2, span);
 
-        float a0 = 1.0 - smoothstep(wB - 1.0, wB + 1.5, d0);
-        float a1 = 1.0 - smoothstep(wB - 1.0, wB + 1.5, d1);
-        float a2 = 1.0 - smoothstep(wB - 1.0, wB + 1.5, d2);
+        float a0 = 1.0 - smoothstep(wB - 0.05, wB + 0.1, d0);
+        float a1 = 1.0 - smoothstep(wB - 0.05, wB + 0.1, d1);
 
-        float a = max(a0, max(a1, a2));
+        // Two-line scan (not three)
+        float a = max(a0, a1);
+
         a *= mix(0.25, 1.00, hash11(fi + 8.8));
 
         scanBandsA = max(scanBandsA, a);
     }
 
     // ============================================================
-    // SINGLE Cursor: slowed movement + 2-parallel crosshair lines
+    // Cursor box (world-space)
     // ============================================================
     float cursorRate = 45.0;
     float stepT = floor(tTick / cursorRate);
     float fracT = fract(tTick / cursorRate);
     fracT = fracT * fracT * (3.0 - 2.0 * fracT);
 
-    vec2 p0 = vec2(hash12(vec2(stepT - 1.0, 1.23)), hash12(vec2(stepT - 1.0, 4.56))) * cells;
-    vec2 p1 = vec2(hash12(vec2(stepT + 0.0, 1.23)), hash12(vec2(stepT + 0.0, 4.56))) * cells;
+    vec2 p0 = vec2(hash12(vec2(stepT - 1.0, 1.23)), hash12(vec2(stepT - 1.0, 4.56))) * 20.0 - 10.0;
+    vec2 p1 = vec2(hash12(vec2(stepT + 0.0, 1.23)), hash12(vec2(stepT + 0.0, 4.56))) * 20.0 - 10.0;
 
     vec2 curCell = floor(mix(p0, p1, fracT));
-    curCell = pmod2(curCell, cells);
+    // Wrap cursor along the perimeter so it doesn't introduce a seam.
+    curCell.x = pmod(curCell.x, perimCells);
 
     float sizeStep = floor(tTick / 60.0);
     float selSize  = 1.0 + floor(hash11(sizeStep * 1.37) * 3.0);
 
-    float oxCell = curCell.x;
-    float oyCell = curCell.y;
-
-    float inX = inRangeWrap(cellId.x, oxCell, selSize, cells);
-    float inY = inRangeWrap(cellId.y, oyCell, selSize, cells);
+    float inX = step(curCell.x, cellId.x) * step(cellId.x, curCell.x + selSize - 0.5);
+    float inY = step(curCell.y, cellId.y) * step(cellId.y, curCell.y + selSize - 0.5);
     float inRect = inX * inY;
 
-    float oxPx = oxCell * cellPx;
-    float oyPx = oyCell * cellPx;
-    float rectWpx = selSize * cellPx;
-    vec2 lp = vec2(pmod(x - oxPx, widthPx), pmod(y - oyPx, heightPx));
+    // Use wrapped (looped) X for cursor math (avoids issues when gRenderAA is locally unwrapped).
+    vec2 gCursor = vec2(gxLoop, gRender.y);
 
-    float dEdgePx = min(min(lp.x, rectWpx - lp.x), min(lp.y, rectWpx - lp.y));
-    float thPx = 2.0;
-    float aaPx = max(max(fwidth(lp.x), fwidth(lp.y)), 1.0);
-    float boxOutline = (1.0 - smoothstep(thPx, thPx + aaPx, dEdgePx)) * inRect;
+    vec2 lp = gCursor - curCell;
+    float dEdge = min(min(lp.x, selSize - lp.x), min(lp.y, selSize - lp.y));
+    float th = 0.12;
+    float aa = max(max(fw.x, fw.y), 0.05);
+    float boxOutline = (1.0 - smoothstep(th, th + aa, dEdge)) * inRect;
     float boxFill = inRect;
 
-    // ---- Crosshair: TWO lines on each axis aligned to grid edges ----
-    float vx0 = oxCell * cellPx;
-    float vx1 = pmod((oxCell + selSize) * cellPx, widthPx);
-    float hy0 = oyCell * cellPx;
-    float hy1 = pmod((oyCell + selSize) * cellPx, heightPx);
+    // ---- Crosshair lines ----
+    float vx0 = curCell.x;
+    float vx1 = curCell.x + selSize;
+    float hy0 = curCell.y;
+    float hy1 = curCell.y + selSize;
 
-    float dx0 = min(abs(x - vx0), abs(x - (vx0 + widthPx)));
-    float dx1 = min(abs(x - vx1), abs(x - (vx1 + widthPx)));
-    float dy0 = min(abs(y - hy0), abs(y - (hy0 + heightPx)));
-    float dy1 = min(abs(y - hy1), abs(y - (hy1 + heightPx)));
+    float dx0 = abs(gCursor.x - vx0);
+    float dx1 = abs(gCursor.x - vx1);
+    float dy0 = abs(gCursor.y - hy0);
+    float dy1 = abs(gCursor.y - hy1);
 
-    float crossW = 1.6;
-    float vA = max(1.0 - smoothstep(crossW - 0.6, crossW + 1.4, dx0),
-                   1.0 - smoothstep(crossW - 0.6, crossW + 1.4, dx1));
-    float hA = max(1.0 - smoothstep(crossW - 0.6, crossW + 1.4, dy0),
-                   1.0 - smoothstep(crossW - 0.6, crossW + 1.4, dy1));
+    float crossW = 0.1;
+    float vA = max(1.0 - smoothstep(crossW - 0.03, crossW + 0.08, dx0),
+                   1.0 - smoothstep(crossW - 0.03, crossW + 0.08, dx1));
+    float hA = max(1.0 - smoothstep(crossW - 0.03, crossW + 0.08, dy0),
+                   1.0 - smoothstep(crossW - 0.03, crossW + 0.08, dy1));
 
     float crossA = max(vA, hA);
 
-    float nearBlock = 1.0 - smoothstep(0.0, 220.0,
+    float nearBlock = 1.0 - smoothstep(0.0, 15.0,
                         min(min(dx0, dx1), min(dy0, dy1)));
     crossA *= (0.50 + 0.50 * nearBlock);
 
@@ -289,15 +386,12 @@ void main() {
     float boxFillA       = boxFill    * baseOpacity * (0.20 + 0.55 * effect);
     float boxOutlineA    = boxOutline * baseOpacity * (0.30 + 0.70 * effect);
     float crossFinalA    = crossA     * baseOpacity * (0.16 + 0.35 * effect);
-
-    // Mild vignette
-    vec2 dv = screenUV * 2.0 - 1.0;
-    float vign = 1.0 - 0.45 * smoothstep(0.65, 1.25, dot(dv, dv));
-    vign = clamp(vign, 0.0, 1.0);
+    float gridLineFinal  = gridLine   * baseOpacity * 0.15;
 
     float outA = 0.0;
     vec3 outRGB = vec3(0.0);
 
+    outRGB += baseCyan * gridLineFinal;    outA = max(outA, gridLineFinal);
     outRGB += baseCyan * scanBandsFinal;   outA = max(outA, scanBandsFinal);
     outRGB += baseCyan * crossFinalA;      outA = max(outA, crossFinalA);
     outRGB += baseCyan * gridHintA;        outA = max(outA, gridHintA);
@@ -318,9 +412,6 @@ void main() {
     // Mild glow
     float glow = smoothstep(0.25, 0.95, outA);
     outRGB = mix(outRGB, vec3(1.0), 0.10 * glow);
-
-    outRGB *= vign;
-    outA   *= vign;
 
     fragColor = vec4(outRGB * vColor.rgb, outA);
 }
