@@ -11,25 +11,47 @@ import java.util.List;
  * Represents a 3D projection zone defined by two corner BlockPos positions.
  * The pattern is projected outward from the center XZ of the zone onto visible block faces,
  * as if there were 4 flat projectors facing outward from the center.
+ * 
+ * Pre-computes many values at construction time for render performance.
  */
 public final class ProjectionZone {
     private final BlockPos min;
     private final BlockPos max;
+    private final Box bounds;
+    
+    // Pre-computed values for rendering (avoid per-frame calculation)
     private final double centerX;
     private final double centerZ;
-    private final Box bounds;
+    private final double radius;
+    private final float centerXf;
+    private final float centerZf;
+    private final float radiusf;
+    
+    // Pre-computed bounds as primitives (avoid BlockPos method calls)
+    private final int minX, minY, minZ;
+    private final int maxX, maxY, maxZ;
+    
+    // Pre-computed wall thickness boundaries
+    private static final int WALL_THICKNESS = 10;
+    private final int wallMinX, wallMaxX;
+    private final int wallMinY, wallMaxY;
+    private final int wallMinZ, wallMaxZ;
+    
+    // Iteration ranges for shell-only rendering (6 slabs)
+    // Each slab is a region of the shell to iterate
+    private final int[][] shellSlabs;
 
     // Static list of all active projection zones
     private static final List<ProjectionZone> ZONES = new ArrayList<>();
 
     public ProjectionZone(BlockPos corner1, BlockPos corner2) {
         // Normalize to ensure min < max
-        int minX = Math.min(corner1.getX(), corner2.getX());
-        int minY = Math.min(corner1.getY(), corner2.getY());
-        int minZ = Math.min(corner1.getZ(), corner2.getZ());
-        int maxX = Math.max(corner1.getX(), corner2.getX());
-        int maxY = Math.max(corner1.getY(), corner2.getY());
-        int maxZ = Math.max(corner1.getZ(), corner2.getZ());
+        this.minX = Math.min(corner1.getX(), corner2.getX());
+        this.minY = Math.min(corner1.getY(), corner2.getY());
+        this.minZ = Math.min(corner1.getZ(), corner2.getZ());
+        this.maxX = Math.max(corner1.getX(), corner2.getX());
+        this.maxY = Math.max(corner1.getY(), corner2.getY());
+        this.maxZ = Math.max(corner1.getZ(), corner2.getZ());
 
         this.min = new BlockPos(minX, minY, minZ);
         this.max = new BlockPos(maxX, maxY, maxZ);
@@ -37,9 +59,89 @@ public final class ProjectionZone {
         // Center XZ of the zone (projection origin)
         this.centerX = (minX + maxX + 1) / 2.0;
         this.centerZ = (minZ + maxZ + 1) / 2.0;
+        this.centerXf = (float) centerX;
+        this.centerZf = (float) centerZ;
+
+        // Pre-compute radius
+        double maxDx = Math.max(Math.abs(minX - centerX), Math.abs((maxX + 1) - centerX));
+        double maxDz = Math.max(Math.abs(minZ - centerZ), Math.abs((maxZ + 1) - centerZ));
+        this.radius = Math.max(maxDx, maxDz);
+        this.radiusf = (float) radius;
 
         // Bounding box for containment checks
         this.bounds = new Box(minX, minY, minZ, maxX + 1, maxY + 1, maxZ + 1);
+        
+        // Pre-compute wall boundaries
+        this.wallMinX = minX + WALL_THICKNESS;
+        this.wallMaxX = maxX - WALL_THICKNESS;
+        this.wallMinY = minY + WALL_THICKNESS;
+        this.wallMaxY = maxY - WALL_THICKNESS;
+        this.wallMinZ = minZ + WALL_THICKNESS;
+        this.wallMaxZ = maxZ - WALL_THICKNESS;
+        
+        // Pre-compute shell slabs for efficient iteration
+        // Instead of iterating the entire volume and skipping interior,
+        // we iterate only the 6 shell regions (slabs along each face)
+        this.shellSlabs = computeShellSlabs();
+    }
+    
+    /**
+     * Computes the 6 shell slabs (non-overlapping regions that cover the outer shell).
+     * Returns array of slabs, each slab is {minX, maxX, minY, maxY, minZ, maxZ}
+     */
+    private int[][] computeShellSlabs() {
+        // We decompose the shell into 6 non-overlapping slabs:
+        // 1. Bottom slab (Y = minY to wallMinY-1, full XZ)
+        // 2. Top slab (Y = wallMaxY+1 to maxY, full XZ)
+        // 3. North slab (Z = minZ to wallMinZ-1, middle Y, full X)
+        // 4. South slab (Z = wallMaxZ+1 to maxZ, middle Y, full X)
+        // 5. West slab (X = minX to wallMinX-1, middle Y, middle Z)
+        // 6. East slab (X = wallMaxX+1 to maxX, middle Y, middle Z)
+        
+        int midYMin = Math.max(wallMinY, minY);
+        int midYMax = Math.min(wallMaxY, maxY);
+        int midZMin = Math.max(wallMinZ, minZ);
+        int midZMax = Math.min(wallMaxZ, maxZ);
+        
+        List<int[]> slabs = new ArrayList<>();
+        
+        // Bottom slab
+        if (wallMinY > minY) {
+            slabs.add(new int[]{minX, maxX, minY, wallMinY - 1, minZ, maxZ});
+        }
+        
+        // Top slab
+        if (wallMaxY < maxY) {
+            slabs.add(new int[]{minX, maxX, wallMaxY + 1, maxY, minZ, maxZ});
+        }
+        
+        // North slab (only middle Y range to avoid overlap with top/bottom)
+        if (wallMinZ > minZ && midYMin <= midYMax) {
+            slabs.add(new int[]{minX, maxX, midYMin, midYMax, minZ, wallMinZ - 1});
+        }
+        
+        // South slab
+        if (wallMaxZ < maxZ && midYMin <= midYMax) {
+            slabs.add(new int[]{minX, maxX, midYMin, midYMax, wallMaxZ + 1, maxZ});
+        }
+        
+        // West slab (middle Y and Z to avoid overlaps)
+        if (wallMinX > minX && midYMin <= midYMax && midZMin <= midZMax) {
+            slabs.add(new int[]{minX, wallMinX - 1, midYMin, midYMax, midZMin, midZMax});
+        }
+        
+        // East slab
+        if (wallMaxX < maxX && midYMin <= midYMax && midZMin <= midZMax) {
+            slabs.add(new int[]{wallMaxX + 1, maxX, midYMin, midYMax, midZMin, midZMax});
+        }
+        
+        return slabs.toArray(new int[0][]);
+    }
+    
+    // ========== Pre-computed getters ==========
+    
+    public int[][] getShellSlabs() {
+        return shellSlabs;
     }
 
     public BlockPos getMin() {
@@ -57,6 +159,29 @@ public final class ProjectionZone {
     public double getCenterZ() {
         return centerZ;
     }
+    
+    public float getCenterXf() {
+        return centerXf;
+    }
+    
+    public float getCenterZf() {
+        return centerZf;
+    }
+    
+    public double getRadius() {
+        return radius;
+    }
+    
+    public float getRadiusf() {
+        return radiusf;
+    }
+    
+    public int getMinX() { return minX; }
+    public int getMinY() { return minY; }
+    public int getMinZ() { return minZ; }
+    public int getMaxX() { return maxX; }
+    public int getMaxY() { return maxY; }
+    public int getMaxZ() { return maxZ; }
 
     public Box getBounds() {
         return bounds;
@@ -66,38 +191,38 @@ public final class ProjectionZone {
      * Checks if a block position is within this zone's bounds.
      */
     public boolean contains(BlockPos pos) {
-        return pos.getX() >= min.getX() && pos.getX() <= max.getX()
-            && pos.getY() >= min.getY() && pos.getY() <= max.getY()
-            && pos.getZ() >= min.getZ() && pos.getZ() <= max.getZ();
+        return pos.getX() >= minX && pos.getX() <= maxX
+            && pos.getY() >= minY && pos.getY() <= maxY
+            && pos.getZ() >= minZ && pos.getZ() <= maxZ;
     }
 
     /**
      * Checks if a block position is within this zone's XZ bounds (ignoring Y).
      */
     public boolean containsXZ(int x, int z) {
-        return x >= min.getX() && x <= max.getX()
-            && z >= min.getZ() && z <= max.getZ();
+        return x >= minX && x <= maxX
+            && z >= minZ && z <= maxZ;
     }
 
     /**
      * Gets the width (X dimension) of the zone in blocks.
      */
     public int getWidth() {
-        return max.getX() - min.getX() + 1;
+        return maxX - minX + 1;
     }
 
     /**
      * Gets the height (Y dimension) of the zone in blocks.
      */
     public int getHeight() {
-        return max.getY() - min.getY() + 1;
+        return maxY - minY + 1;
     }
 
     /**
      * Gets the depth (Z dimension) of the zone in blocks.
      */
     public int getDepth() {
-        return max.getZ() - min.getZ() + 1;
+        return maxZ - minZ + 1;
     }
 
     // ========== Static zone management ==========
@@ -132,11 +257,13 @@ public final class ProjectionZone {
 
     /**
      * Initializes the default test zones.
+     * Room size: 110 (X) x 150 (Y) x 150 (Z)
      */
     public static void initTestZones() {
         clearZones();
-        // Test zone: 6x6x6 cube from (0, 0, 0) to (5, 5, 5)
-        addZone(new ProjectionZone(new BlockPos(0, 0, 0), new BlockPos(50, 50, 50)));
+        // Massive room: 110 x 150 x 150 blocks
+        // Centered around origin for X and Z, Y from -59 to 90 (150 blocks)
+        addZone(new ProjectionZone(new BlockPos(-47, 85, -74), new BlockPos(42, -59, 71)));
     }
 
     @Override

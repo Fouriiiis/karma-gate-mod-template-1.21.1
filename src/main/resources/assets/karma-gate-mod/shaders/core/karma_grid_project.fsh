@@ -149,10 +149,13 @@ void main() {
     // ---- power flicker (alpha modulation, no hard cutoff) ----
     float power = saturate(uElectricPower);
     float flickerStep = floor(tTick * 0.10);
-    float gate = step(hash12(vec2(flickerStep, 91.7)), power);
-    float flickerA = mix(0.18, 1.00, gate);
-    flickerA *= mix(0.85, 1.15, hash12(vec2(flickerStep, 13.37)));
+    vec2 flickerSeed = vec2(flickerStep, 91.7);
+    float gate = step(hash12(flickerSeed), power);
+    float flickerA = mix(0.18, 1.00, gate) * mix(0.85, 1.15, hash12(flickerSeed + 78.0));
     float baseOpacity = uOpacity * vColor.a * flickerA;
+    
+    // Early discard for very low opacity (saves fragment processing)
+    if (baseOpacity < 0.01) discard;
 
     // ============================================================
     // Square-cylinder projection coordinates
@@ -185,12 +188,21 @@ void main() {
     // ============================================================
     // Drift + snap steps (periodic animation)
     // ============================================================
-    const float cellPx = 1.0;  // 1 block = 1 cell
+    
+    // For perspective-correct glyph sizing (1 block visual size from center):
+    // Scale down coordinates so each glyph covers more perimeter space.
+    // glyphScale of 4.0 means each glyph spans 4 blocks = appears ~1 block sized at typical viewing distance
+    const float glyphScale = 4.0;
+    vec2 gScaled = gBase / glyphScale;
+    
+    const float cellPx = 1.0;  // 1 cell in scaled space
     const float snapPx = 2.0;
 
     // Make the *pattern* itself tile seamlessly around the square-perimeter loop.
     // This ensures U≈0 and U≈perim render identical content.
-    float perimCells = max(floor(perim / cellPx + 0.5), 1.0);
+    // Use scaled perimeter for cell count
+    float perimScaled = perim / glyphScale;
+    float perimCells = max(floor(perimScaled / cellPx + 0.5), 1.0);
 
     vec2 baseVel = vec2(0.029, 0.021) * (0.85 + 0.15 * anim) * anim;
 
@@ -205,7 +217,8 @@ void main() {
     vec2 cellShift = 2.0 * k;
     vec2 gridOffsetCells = gridPosPx / cellPx;
 
-    vec2 gRender = gBase + gridOffsetCells;
+    // Use scaled coordinates for larger glyphs
+    vec2 gRender = gScaled + gridOffsetCells;
 
     // Wrap the X coordinate onto a ring of length perimCells.
     float gxLoop = pmod(gRender.x, perimCells);
@@ -225,93 +238,61 @@ void main() {
     vec2 logicalCellId = cellId + cellShift;
     logicalCellId.x = pmod(logicalCellId.x, perimCells);
 
-    // ============================================================
-    // Grid lines
-    // ============================================================
+    // Grid lines disabled for cleaner glyph-only look
     vec2 fw = fwidth(gRenderAA);
-    float linePx = max(uLineWidthPx, 0.25);
-    float lw = 0.5 * linePx;
-
-    float gx = min(cellUV.x, 1.0 - cellUV.x);
-    float gy = min(cellUV.y, 1.0 - cellUV.y);
-
-    float gridLineX = 1.0 - smoothstep(lw, lw + fw.x * 2.0, gx);
-    float gridLineY = 1.0 - smoothstep(lw, lw + fw.y * 2.0, gy);
-    float gridLine  = max(gridLineX, gridLineY);
+    float gridLine = 0.0;
 
     // ============================================================
-    // Glyph field
+    // Glyph field - optimized with fewer hash calls
     // ============================================================
+    // Compute base hash once and derive other values from it
+    float baseHash = hash12(logicalCellId);
+    float baseHash2 = hash12(logicalCellId + 17.3);
+    
     vec2 clusterCell = floor(logicalCellId / 8.0);
-    float cluster = smoothstep(0.25, 0.90, hash12(clusterCell + vec2(3.3, 7.7)));
+    float cluster = smoothstep(0.25, 0.90, hash12(clusterCell));
 
     float baseDensity = mix(0.08, 0.22, effect);
     float density = clamp(baseDensity + cluster * 0.20 * effect, 0.0, 0.55);
 
-    float present = step(hash12(logicalCellId), density);
+    float present = step(baseHash, density);
+    
+    // Early exit if glyph not present - skip expensive texture sample
+    float glyphA = 0.0;
+    float glyphCore = 0.0;
+    if (present > 0.5) {
+        float lifeTicks = mix(60.0, 520.0, baseHash2);
+        float phase = fract((tTick + baseHash * 1000.0) / max(lifeTicks, 1.0));
+        float alive = step(phase, 0.92);
+        
+        if (alive > 0.5) {
+            float shimmer = 0.55 + 0.45 * sin(tTick * (0.18 + 0.12 * baseHash2) + baseHash * 6.283185);
+            
+            float glyphIndex = floor(fract(baseHash * 7.31) * 50.0);
+            glyphCore = sampleGlyph(cellUV, glyphIndex, 0.10, 0.65, 0.92);
+            
+            glyphA = glyphCore * baseOpacity * (0.55 + 0.75 * shimmer);
+        }
+    }
 
-    float lifeTicks = mix(60.0, 520.0, hash12(logicalCellId + vec2(17.3, 91.1)));
-    float phase = fract((tTick + hash12(logicalCellId + vec2(7.7, 3.3)) * 1000.0) / max(lifeTicks, 1.0));
-    float alive = step(phase, 0.92);
-
-    float shimmer = 0.55 + 0.45 * sin(tTick * (0.18 + 0.12 * hash12(logicalCellId + 5.0))
-                                      + hash12(logicalCellId) * 6.283185);
-    shimmer = clamp(shimmer, 0.0, 1.0);
-
-    float glyphIndex = floor(hash12(logicalCellId + vec2(3.1, 8.2)) * 50.0);
-    float glyphCore  = sampleGlyph(cellUV, glyphIndex, 0.10, 0.65, 0.92);
-
-    float selected = step(hash12(logicalCellId + vec2(99.4, 12.7)), 0.015);
-
-    float glyphA = glyphCore * present * alive * baseOpacity * (0.55 + 0.75 * shimmer);
+    float selected = step(fract(baseHash * 99.4), 0.015);
 
     // ============================================================
-    // Smooth scan bands (visual only)
+    // Smooth scan bands (visual only) - simplified for performance
     // ============================================================
     float widthPx  = 20.0;
     float heightPx = 20.0;
 
-    // Ensure scan-band math is also periodic around the perimeter loop.
-    // First wrap to the perimeter length, then apply the band period.
     vec2 pPx = gRenderAA;
     float xPer = pmod(pPx.x, perimCells);
     float x = pmod(xPer, widthPx);
     float y = pmod(pPx.y, heightPx);
 
-    float scanBandsA = 0.0;
-    const int BANDS = 10;
-
-    for (int i = 0; i < BANDS; i++) {
-        float fi = float(i);
-
-        float align = step(0.35, hash11(fi + 9.13));
-        float span  = (align > 0.5) ? widthPx : heightPx;
-        float base  = hash11(fi + 2.19) * (span + 40.0) - 20.0;
-
-        float dir   = (hash11(fi + 4.71) < 0.5) ? -1.0 : 1.0;
-        float speed = mix(0.02, 0.10, hash11(fi + 0.37)) * dir;
-
-        float jitter = (hash11(fi + 6.6) - 0.5) * 0.3 * sin(tTick * 0.13 + fi);
-        float pos = pmod(base + tTick * speed * (1.0 + 0.25 * anim) + jitter, span);
-
-        float coord = (align > 0.5) ? x : y;
-
-        float wB = 0.12 + 0.05 * hash11(fi + 12.3);
-
-        float d0 = ringDist(coord, pos, span);
-        float pos2 = pmod(pos + 1.0, span);
-        float d1 = ringDist(coord, pos2, span);
-
-        float a0 = 1.0 - smoothstep(wB - 0.05, wB + 0.1, d0);
-        float a1 = 1.0 - smoothstep(wB - 0.05, wB + 0.1, d1);
-
-        // Two-line scan (not three)
-        float a = max(a0, a1);
-
-        a *= mix(0.25, 1.00, hash11(fi + 8.8));
-
-        scanBandsA = max(scanBandsA, a);
-    }
+    // Single horizontal scan band for performance
+    float scanSpeed = 0.05;
+    float scanPos = pmod(tTick * scanSpeed, heightPx);
+    float scanDist = ringDist(y, scanPos, heightPx);
+    float scanBandsA = (1.0 - smoothstep(0.1, 0.25, scanDist)) * 0.7;
 
     // ============================================================
     // Cursor box (world-space)
@@ -372,7 +353,7 @@ void main() {
 
     // Invert glyph inside cursor: fill + dark cutouts
     float glyphA_outside = glyphA * (1.0 - inRect);
-    float hole = glyphCore * present * alive * inRect;
+    float hole = glyphCore * inRect;
     float holeStrength = (0.70 + 0.25 * effect);
 
     // ============================================================
