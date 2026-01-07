@@ -192,7 +192,7 @@ void main() {
     // For perspective-correct glyph sizing (1 block visual size from center):
     // Scale down coordinates so each glyph covers more perimeter space.
     // glyphScale of 4.0 means each glyph spans 4 blocks = appears ~1 block sized at typical viewing distance
-    const float glyphScale = 4.0;
+    const float glyphScale = 2.0;
     vec2 gScaled = gBase / glyphScale;
     
     const float cellPx = 1.0;  // 1 cell in scaled space

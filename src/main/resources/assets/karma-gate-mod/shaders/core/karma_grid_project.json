@@ -155,6 +155,29 @@
       ]
     },
     {
+      "name": "uViewMat",
+      "type": "matrix4x4",
+      "count": 16,
+      "values": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
       "name": "uInvViewMat",
       "type": "matrix4x4",
       "count": 16,

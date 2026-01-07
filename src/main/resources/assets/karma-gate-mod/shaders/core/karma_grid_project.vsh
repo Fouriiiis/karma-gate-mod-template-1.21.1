@@ -4,24 +4,26 @@ in vec3 Position;
 in vec4 Color;
 in vec2 UV0;
 
-uniform mat4 ModelViewMat;
+uniform mat4 ModelViewMat;  // Set to identity by Java side
 uniform mat4 ProjMat;
 
-// Inverse of the view matrix you used on the CPU when baking positions into the buffer.
-// This lets the shader recover true world-space position per-fragment (so rays stay straight).
-uniform mat4 uInvViewMat;
+// View matrix passed directly as uniform - we control this completely
+uniform mat4 uViewMat;
 
 out vec4 vColor;
 out vec2 vWorldUV;     // kept for compatibility/debug
-out vec3 vWorldPos;    // recovered world position
+out vec3 vWorldPos;    // world position for per-fragment projection
 
 void main() {
     vColor   = Color;
     vWorldUV = UV0;
 
-    // Position arriving here is *already* in view space (because the renderer bakes the view matrix into vertices).
-    // Recover world-space position so we can do per-fragment ray projection without interpolation warping.
-    vWorldPos = (uInvViewMat * vec4(Position, 1.0)).xyz;
+    // Position is in WORLD SPACE - pass it directly to fragment shader
+    vWorldPos = Position;
 
-    gl_Position = ProjMat * ModelViewMat * vec4(Position, 1.0);
+    // Transform world position to clip space using our controlled matrices
+    // uViewMat is set by Java and contains the proper view transformation
+    // ModelViewMat should be identity (set by Java), ProjMat is our custom projection
+    vec4 viewPos = uViewMat * vec4(Position, 1.0);
+    gl_Position = ProjMat * ModelViewMat * viewPos;
 }
