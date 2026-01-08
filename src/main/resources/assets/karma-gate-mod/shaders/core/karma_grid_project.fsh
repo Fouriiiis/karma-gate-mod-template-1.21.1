@@ -66,19 +66,17 @@ vec2  pmod2(vec2 x, float m) { return vec2(pmod(x.x, m), pmod(x.y, m)); }
 float computeSquarePerimeterU_ws(float worldX, float worldZ, float centerX, float centerZ, float radius) {
     float R = max(radius, 1e-6);
 
+    // Ray from center through (worldX, worldZ) intersects square max(|x|,|z|)=R at:
+    // t = R / max(|rx|,|rz|). This avoids normalize()+sqrt().
     float rx = worldX - centerX;
     float rz = worldZ - centerZ;
 
-    float len = sqrt(rx * rx + rz * rz);
-    float dx = (len > 1e-9) ? (rx / len) : 1.0;
-    float dz = (len > 1e-9) ? (rz / len) : 0.0;
+    float denom = max(abs(rx), abs(rz));
+    if (denom < 1e-6) { rx = 1.0; rz = 0.0; denom = 1.0; } // stable fallback direction
 
-    // Ray-square boundary intersection (scale so max(|x|,|z|)=R)
-    float m = max(abs(dx), abs(dz));
-    if (m < 1e-9) m = 1.0;
-
-    float hx = dx * (R / m);
-    float hz = dz * (R / m);
+    float t = R / denom;
+    float hx = rx * t;
+    float hz = rz * t;
 
     // Convert boundary point to perimeter distance [0..8R)
     // Origin at (x=+R, z=-R), increasing CCW: East -> North -> West -> South
@@ -104,16 +102,11 @@ float computeSquarePerimeterU_ws(float worldX, float worldZ, float centerX, floa
         }
     }
 
-    // IMPORTANT:
-    // We do NOT wrap with mod() here.
-    // Keeping u continuous eliminates the visible seam caused by the 8R->0 jump at the chosen seam corner.
-    //
-    // To mimic the Java-side "per-quad seam fix", we shift the EAST/SOUTH corner region forward by +perim
-    // so values near (x=+R, z=-R) become ~8R instead of ~0R.
+    // Keep u continuous across the seam:
+    // push the branch cut away from (x=+R, z=-R) by shifting that corner region forward.
     float perim = 8.0 * R;
+    if (ax >= az && hx >= 0.0 && hz < 0.0) u += perim;
 
-    // If we're on the east side in the south half (hz < 0), push forward by one full wrap.
-    // This moves the branch cut away from that corner and makes the pattern loop cleanly there.
     return u;
 }
 
@@ -149,9 +142,8 @@ void main() {
     // ---- power flicker (alpha modulation, no hard cutoff) ----
     float power = saturate(uElectricPower);
     float flickerStep = floor(tTick * 0.10);
-    vec2 flickerSeed = vec2(flickerStep, 91.7);
-    float gate = step(hash12(flickerSeed), power);
-    float flickerA = mix(0.18, 1.00, gate) * mix(0.85, 1.15, hash12(flickerSeed + 78.0));
+    float gate = step(hash11(flickerStep + 91.7), power);
+    float flickerA = mix(0.18, 1.00, gate) * mix(0.85, 1.15, hash11(flickerStep + 169.7));
     float baseOpacity = uOpacity * vColor.a * flickerA;
     
     // Early discard for very low opacity (saves fragment processing)
@@ -162,27 +154,9 @@ void main() {
     // ============================================================
     float cells = max(floor(uGridCells + 0.5), 1.0);
 
-    // vWorldUV.x = unfolded square perimeter U (wraps around corners)
-    // vWorldUV.y = world Y
-    // Compute projection per-fragment from true world position (prevents interpolation warping)
-    float uPerim = computeSquarePerimeterU_ws(vWorldPos.x, vWorldPos.z, uZoneCenterX, uZoneCenterZ, uZoneRadius);
-
-    // Choose a continuous unwrap of uPerim that matches the per-vertex reference (vWorldUV.x).
-    // This avoids derivative-heuristic seams that can appear mid-wall on some meshes.
-    float perim = 8.0 * max(uZoneRadius, 1e-6);
-    float uRaw = pmod(uPerim, perim);
-
-    // vWorldUV.x comes from the renderer and is already made continuous per-quad.
-    float uRef = vWorldUV.x;
-
-    float u0 = uRaw;
-    float u1 = uRaw + perim;
-    float u2 = uRaw - perim;
-
-    float uCont = u0;
-    if (abs(u1 - uRef) < abs(uCont - uRef)) uCont = u1;
-    if (abs(u2 - uRef) < abs(uCont - uRef)) uCont = u2;
-
+    // FAST PATH: your geometry is already emitted as 1x1 block faces,
+    // so using the seam-fixed per-vertex perimeter U is visually equivalent and much cheaper.
+    float uCont = vWorldUV.x;
     vec2 gBase = vec2(uCont, vWorldPos.y);
 
     // ============================================================
@@ -201,6 +175,7 @@ void main() {
     // Make the *pattern* itself tile seamlessly around the square-perimeter loop.
     // This ensures U≈0 and U≈perim render identical content.
     // Use scaled perimeter for cell count
+    float perim = 8.0 * max(uZoneRadius, 1e-6);
     float perimScaled = perim / glyphScale;
     float perimCells = max(floor(perimScaled / cellPx + 0.5), 1.0);
 
