@@ -247,12 +247,11 @@ public final class GridProjectRenderer {
 
         if (!testZonesInitialized) {
             invalidateMeshes();
-            ProjectionZone.initTestZones();
+            
             testZonesInitialized = true;
         }
 
         List<ProjectionZone> zones = ProjectionZone.getZones();
-        if (zones.isEmpty()) return;
 
         if (mc.getWindow() == null
             || mc.getWindow().getFramebufferWidth() <= 0
@@ -302,6 +301,12 @@ public final class GridProjectRenderer {
                 setUniform1f(program, "uZoneCenterX", zone.getCenterXf());
                 setUniform1f(program, "uZoneCenterZ", zone.getCenterZf());
                 setUniform1f(program, "uZoneRadius",  zone.getRadiusf());
+
+                // Zone bounds as world-space edges (max is exclusive: maxBlock + 1)
+                setUniform1f(program, "uZoneMinX", (float) zone.getMinX());
+                setUniform1f(program, "uZoneMaxX", (float) (zone.getMaxX() + 1));
+                setUniform1f(program, "uZoneMinZ", (float) zone.getMinZ());
+                setUniform1f(program, "uZoneMaxZ", (float) (zone.getMaxZ() + 1));
 
                 ensureZoneMeshBuilt(world, zone);
 

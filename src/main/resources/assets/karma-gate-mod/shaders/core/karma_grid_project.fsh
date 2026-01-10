@@ -31,6 +31,12 @@ in vec3 vWorldPos; // true world-space position (reconstructed in vertex shader)
 uniform float uZoneCenterX;
 uniform float uZoneCenterZ;
 uniform float uZoneRadius;
+// Zone bounds in world-space block coordinates (edges, not block centers)
+// Convention: min is inclusive edge, max is exclusive edge (maxBlock + 1).
+uniform float uZoneMinX;
+uniform float uZoneMaxX;
+uniform float uZoneMinZ;
+uniform float uZoneMaxZ;
 out vec4 fragColor;
 
 // ---------- Hash helpers ----------
@@ -139,12 +145,31 @@ void main() {
     float effect = saturate(uEffectAmount);
     float anim   = (uAnimSpeed <= 0.0) ? 1.0 : uAnimSpeed;
 
+    // ============================================================
+    // Zone-edge inward fade (uses zone bounds)
+    // 10 block border -> 10 block fade -> nothing
+    // ============================================================
+    // Distance to the nearest vertical boundary of the zone rectangle in XZ.
+    // This makes the fade follow the actual projection zone edges.
+    float dLeft  = vWorldPos.x - uZoneMinX;
+    float dRight = uZoneMaxX - vWorldPos.x;
+    float dNear  = vWorldPos.z - uZoneMinZ;
+    float dFar   = uZoneMaxZ - vWorldPos.z;
+    float inward = min(min(dLeft, dRight), min(dNear, dFar));
+    inward = max(inward, 0.0);
+
+    const float borderBlocks = 10.0;
+    const float fadeBlocks   = 10.0;
+    // 1.0 within the border, then smoothly fades to 0.0 over the next 10 blocks.
+    float zoneFade = 1.0 - smoothstep(borderBlocks, borderBlocks + fadeBlocks, inward);
+    if (zoneFade <= 0.001) discard;
+
     // ---- power flicker (alpha modulation, no hard cutoff) ----
     float power = saturate(uElectricPower);
     float flickerStep = floor(tTick * 0.10);
     float gate = step(hash11(flickerStep + 91.7), power);
     float flickerA = mix(0.18, 1.00, gate) * mix(0.85, 1.15, hash11(flickerStep + 169.7));
-    float baseOpacity = uOpacity * vColor.a * flickerA;
+    float baseOpacity = uOpacity * vColor.a * flickerA * zoneFade;
     
     // Early discard for very low opacity (saves fragment processing)
     if (baseOpacity < 0.01) discard;
@@ -166,7 +191,7 @@ void main() {
     // For perspective-correct glyph sizing (1 block visual size from center):
     // Scale down coordinates so each glyph covers more perimeter space.
     // glyphScale of 4.0 means each glyph spans 4 blocks = appears ~1 block sized at typical viewing distance
-    const float glyphScale = 2.0;
+    const float glyphScale = 1.0;
     vec2 gScaled = gBase / glyphScale;
     
     const float cellPx = 1.0;  // 1 cell in scaled space

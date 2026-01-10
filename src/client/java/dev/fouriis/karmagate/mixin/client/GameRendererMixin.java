@@ -24,6 +24,7 @@ public class GameRendererMixin {
         Matrix4f projectionMatrix, Matrix4f matrix4f2,
         CallbackInfo ci
     ) {
+        
         float tickDelta = tickCounter.getTickDelta(true);
         DistantStructuresRenderer.renderLate(tickDelta, camera);
         GridProjectRenderer.renderLate(tickDelta, camera);

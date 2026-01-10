@@ -36,11 +36,15 @@ import net.fabricmc.fabric.api.client.rendering.v1.DimensionRenderingRegistry;
 import java.util.Map;
 import java.util.HashMap;
 import dev.fouriis.karmagate.entity.karmagate.WaterStreamBlockEntity;
+import dev.fouriis.karmagate.client.network.ClientNetworking;
 
 public class KarmaGateModClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		// This entrypoint is suitable for setting up client-specific logic, such as rendering.
+
+		// Register client networking
+		ClientNetworking.register();
 
 		// Register distant structure billboards
 		//dev.fouriis.karmagate.client.DistantStructuresRenderer.init();

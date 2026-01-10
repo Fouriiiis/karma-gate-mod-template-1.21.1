@@ -15,6 +15,7 @@ import java.util.List;
  * Pre-computes many values at construction time for render performance.
  */
 public final class ProjectionZone {
+    private final String name;
     private final BlockPos min;
     private final BlockPos max;
     private final Box bounds;
@@ -32,7 +33,7 @@ public final class ProjectionZone {
     private final int maxX, maxY, maxZ;
     
     // Pre-computed wall thickness boundaries
-    private static final int WALL_THICKNESS = 10;
+    private static final int WALL_THICKNESS = 20;
     private final int wallMinX, wallMaxX;
     private final int wallMinY, wallMaxY;
     private final int wallMinZ, wallMaxZ;
@@ -44,7 +45,11 @@ public final class ProjectionZone {
     // Static list of all active projection zones
     private static final List<ProjectionZone> ZONES = new ArrayList<>();
 
-    public ProjectionZone(BlockPos corner1, BlockPos corner2) {
+    /**
+     * Creates a named projection zone.
+     */
+    public ProjectionZone(String name, BlockPos corner1, BlockPos corner2) {
+        this.name = name;
         // Normalize to ensure min < max
         this.minX = Math.min(corner1.getX(), corner2.getX());
         this.minY = Math.min(corner1.getY(), corner2.getY());
@@ -140,6 +145,10 @@ public final class ProjectionZone {
     
     // ========== Pre-computed getters ==========
     
+    public String getName() {
+        return name;
+    }
+    
     public int[][] getShellSlabs() {
         return shellSlabs;
     }
@@ -231,6 +240,8 @@ public final class ProjectionZone {
      * Registers a new projection zone.
      */
     public static void addZone(ProjectionZone zone) {
+        // Remove any existing zone with the same name first
+        ZONES.removeIf(z -> z.name.equals(zone.name));
         ZONES.add(zone);
     }
 
@@ -239,6 +250,27 @@ public final class ProjectionZone {
      */
     public static void removeZone(ProjectionZone zone) {
         ZONES.remove(zone);
+    }
+    
+    /**
+     * Removes a projection zone by name.
+     * @return true if a zone was removed
+     */
+    public static boolean removeZoneByName(String name) {
+        return ZONES.removeIf(z -> z.name.equals(name));
+    }
+    
+    /**
+     * Gets a zone by name.
+     * @return the zone, or null if not found
+     */
+    public static ProjectionZone getZoneByName(String name) {
+        for (ProjectionZone zone : ZONES) {
+            if (zone.name.equals(name)) {
+                return zone;
+            }
+        }
+        return null;
     }
 
     /**
@@ -259,15 +291,10 @@ public final class ProjectionZone {
      * Initializes the default test zones.
      * Room size: 110 (X) x 150 (Y) x 150 (Z)
      */
-    public static void initTestZones() {
-        clearZones();
-        // Massive room: 110 x 150 x 150 blocks
-        // Centered around origin for X and Z, Y from -59 to 90 (150 blocks)
-        addZone(new ProjectionZone(new BlockPos(-47, 85, -74), new BlockPos(42, -59, 71)));
-    }
+
 
     @Override
     public String toString() {
-        return "ProjectionZone{min=" + min + ", max=" + max + ", center=(" + centerX + ", " + centerZ + ")}";
+        return "ProjectionZone{name='" + name + "', min=" + min + ", max=" + max + ", center=(" + centerX + ", " + centerZ + ")}";
     }
 }
