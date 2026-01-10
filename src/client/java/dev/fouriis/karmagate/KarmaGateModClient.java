@@ -1,6 +1,8 @@
 package dev.fouriis.karmagate;
 
 import dev.fouriis.karmagate.client.AtcSkyFabricAdapter;
+import dev.fouriis.karmagate.client.swarmer.NeuronSwarmerManager;
+import dev.fouriis.karmagate.client.swarmer.NeuronSwarmerRenderer;
 import dev.fouriis.karmagate.entity.ModBlockEntities;
 import dev.fouriis.karmagate.entity.client.GateLightBlockRenderer;
 import dev.fouriis.karmagate.entity.client.HeatCoilRenderer;
@@ -60,6 +62,9 @@ public class KarmaGateModClient implements ClientModInitializer {
 
 		ParticleFactoryRegistry.getInstance().register(ModParticles.WATER_STREAM, sprites -> new WaterStreamParticle.Factory(sprites));
 		ParticleFactoryRegistry.getInstance().register(ModParticles.STEAM, sprites -> new SteamParticle.Factory(sprites));
+
+		// Register neuron swarmer renderer
+		NeuronSwarmerRenderer.register();
 
 		// Register Karma Gate item renderer with custom transforms
 		var gateItemRenderer = new KarmaGateItemGeoRenderer();
@@ -190,11 +195,14 @@ public class KarmaGateModClient implements ClientModInitializer {
 
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			SteamAudioController.get().clientTick();
+			// Update neuron swarmers
+			NeuronSwarmerManager.getInstance().tick();
 		});
 
 		// Clear cached loop references on disconnect or new join to avoid stale sound state after rejoin
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
 			SteamAudioController.get().clear();
+			NeuronSwarmerManager.getInstance().clear();
 			clampLoops.values().forEach(MultiSound.Handle::stop);
 			screwLoops.values().forEach(MultiSound.Handle::stop);
 			clampLoops.clear();
@@ -202,6 +210,7 @@ public class KarmaGateModClient implements ClientModInitializer {
 		});
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
 			SteamAudioController.get().clear();
+			NeuronSwarmerManager.getInstance().clear();
 			clampLoops.values().forEach(MultiSound.Handle::stop);
 			screwLoops.values().forEach(MultiSound.Handle::stop);
 			clampLoops.clear();
