@@ -82,22 +82,7 @@
         0.0
       ]
     },
-    {
-      "name": "uGridCells",
-      "type": "float",
-      "count": 1,
-      "values": [
-        48.0
-      ]
-    },
-    {
-      "name": "uLineWidthPx",
-      "type": "float",
-      "count": 1,
-      "values": [
-        0.08
-      ]
-    },
+
     {
       "name": "uOpacity",
       "type": "float",
@@ -209,27 +194,13 @@
         1
       ]
     },
+
     {
-      "name": "uInvViewMat",
-      "type": "matrix4x4",
-      "count": 16,
+      "name": "uCircleCount",
+      "type": "int",
+      "count": 1,
       "values": [
-        1,
-        0,
-        0,
-        0,
-        0,
-        1,
-        0,
-        0,
-        0,
-        0,
-        1,
-        0,
-        0,
-        0,
-        0,
-        1
+        0
       ]
     }
   ]

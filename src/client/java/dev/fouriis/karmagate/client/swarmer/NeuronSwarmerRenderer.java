@@ -62,7 +62,9 @@ public class NeuronSwarmerRenderer {
         // Set up rendering state for additive glow blending
         RenderSystem.enableBlend();
         RenderSystem.blendFunc(GlStateManager.SrcFactor.SRC_ALPHA, GlStateManager.DstFactor.ONE);
-        RenderSystem.depthMask(false);
+        // Enable depth writing so swarmers write to depth buffer
+        // This allows projector (rendered later) to be occluded by swarmers
+        RenderSystem.depthMask(true);
         RenderSystem.enableDepthTest();
         RenderSystem.disableCull(); // Disable face culling so particles are visible from both sides
         RenderSystem.setShader(GameRenderer::getPositionTexColorProgram);
@@ -99,7 +101,7 @@ public class NeuronSwarmerRenderer {
             BufferRenderer.drawWithGlobalProgram(builtBuffer);
         }
         
-        // Restore render state
+        // Restore render state - keep depth mask true (default state)
         RenderSystem.depthMask(true);
         RenderSystem.disableBlend();
         RenderSystem.enableCull(); // Re-enable face culling

@@ -16,6 +16,7 @@ import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 import net.minecraft.world.chunk.ChunkStatus;
 import org.joml.Matrix4f;
+import org.lwjgl.opengl.GL20;
 
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -23,6 +24,9 @@ import java.util.Map;
 
 public final class GridProjectRenderer {
     private GridProjectRenderer() {}
+    
+    // Maximum circles that can be uploaded to shader
+    private static final int MAX_CIRCLES = ProjectedCirclePatternManager.MAX_CIRCLES;
 
     private static final int MAX_QUADS = 1_000_000;
     private static final float SURFACE_NUDGE = 0.00125f;
@@ -298,6 +302,14 @@ public final class GridProjectRenderer {
             BufferRenderer.resetCurrentVertexBuffer();
 
             for (ProjectionZone zone : zones) {
+                ensureZoneMeshBuilt(world, zone);
+
+                VertexBuffer vb = ZONE_VBOS.get(zone);
+                if (vb == null) continue;
+
+                // Bind the shader program first so uniforms can be set
+                program.bind();
+                
                 setUniform1f(program, "uZoneCenterX", zone.getCenterXf());
                 setUniform1f(program, "uZoneCenterZ", zone.getCenterZf());
                 setUniform1f(program, "uZoneRadius",  zone.getRadiusf());
@@ -307,11 +319,9 @@ public final class GridProjectRenderer {
                 setUniform1f(program, "uZoneMaxX", (float) (zone.getMaxX() + 1));
                 setUniform1f(program, "uZoneMinZ", (float) zone.getMinZ());
                 setUniform1f(program, "uZoneMaxZ", (float) (zone.getMaxZ() + 1));
-
-                ensureZoneMeshBuilt(world, zone);
-
-                VertexBuffer vb = ZONE_VBOS.get(zone);
-                if (vb == null) continue;
+                
+                // Upload circle data for this zone (now that shader is bound)
+                uploadCircleUniforms(program, zone.getName());
 
                 BufferRenderer.resetCurrentVertexBuffer();
                 vb.bind();
@@ -347,6 +357,47 @@ public final class GridProjectRenderer {
         if (program == null || mat == null) return;
         GlUniform u = program.getUniform(name);
         if (u != null) u.set(mat);
+    }
+
+    /**
+     * Uploads circle uniform data to the shader for the given zone.
+     * IMPORTANT: The shader program must be bound before calling this method.
+     */
+    private static void uploadCircleUniforms(ShaderProgram program, String zoneName) {
+        if (program == null) return;
+        
+        ProjectedCirclePatternManager.PackedCircleData data = 
+            ProjectedCirclePatternManager.getInstance().getPackedData(zoneName);
+        
+        int count = (data != null) ? data.count : 0;
+        
+        // Set circle count
+        setUniform1i(program, "uCircleCount", count);
+        
+        if (count <= 0 || data == null) return;
+        
+        // Get the OpenGL program ID
+        int programId = program.getGlRef();
+        if (programId <= 0) return;
+        
+        // Upload circle data using direct GL calls
+        // uCircles is a vec4 array in the shader
+        int circlesLoc = GL20.glGetUniformLocation(programId, "uCircles");
+        if (circlesLoc >= 0) {
+            GL20.glUniform4fv(circlesLoc, data.circles);
+        }
+        
+        // uCircleExtras is also a vec4 array
+        int extrasLoc = GL20.glGetUniformLocation(programId, "uCircleExtras");
+        if (extrasLoc >= 0) {
+            GL20.glUniform4fv(extrasLoc, data.extras);
+        }
+    }
+    
+    private static void setUniform1i(ShaderProgram program, String name, int value) {
+        if (program == null) return;
+        GlUniform u = program.getUniform(name);
+        if (u != null) u.set(value);
     }
 
     private static void emitQuadWorld(

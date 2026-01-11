@@ -25,6 +25,12 @@ uniform float uZoneMaxX;
 uniform float uZoneMinZ;
 uniform float uZoneMaxZ;
 
+// Circle uniforms
+const int MAX_CIRCLES = 32;
+uniform int uCircleCount;
+uniform vec4 uCircles[MAX_CIRCLES];      // [u, y, radius, blink] per circle
+uniform vec4 uCircleExtras[MAX_CIRCLES]; // [rotationDeg, spokes, reserved, alphaScale] per circle
+
 out vec4 fragColor;
 
 // ---------- Hash helpers ----------
@@ -48,6 +54,19 @@ float pmod(float x, float m) { return mod(mod(x, m) + m, m); }
 float ringDist(float a, float b, float period) {
     float d = abs(a - b);
     return min(d, period - d);
+}
+
+// Signed shortest delta on a looped axis
+float shortestDelta(float from, float to, float period) {
+    float d = to - from;
+    return mod(d + period * 0.5, period) - period * 0.5;
+}
+
+float distToSegment(vec2 p, vec2 a, vec2 b) {
+    vec2 pa = p - a;
+    vec2 ba = b - a;
+    float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+    return length(pa - ba * h);
 }
 
 // Sample a glyph from the 50-column strip atlas
@@ -343,6 +362,181 @@ void main() {
     float holeStrength = (0.80 + 0.25 * effect);
 
     // ============================================================
+    // Projected Circles (Rain World style)
+    // ============================================================
+    float circlesA = 0.0;
+    vec3 circlesRGB = vec3(0.0);
+    float circlesHoleMask = 0.0;   // punches out EVERYTHING (including circles) inside hollow area
+    float circlesOccludeMask = 0.0; // occludes underlying patterns under the ring/fill so it truly draws on top
+    float circleLinesA = 0.0;    // connection lines between circles
+    
+    // Current fragment position in perimeter coordinate space
+    // gBase.x = perimeter U from mesh, gBase.y = world Y
+    vec2 fragPosPerim = gBase; // (uCont, worldY)
+    
+    for (int ci = 0; ci < MAX_CIRCLES; ci++) {
+        if (ci >= uCircleCount) break;
+
+        // Unpack circle data
+        vec4 circleData = uCircles[ci];
+        float circleU = circleData.x;      // perimeter U coord
+        float circleY = circleData.y;      // world Y
+        float circleRad = circleData.z;    // base radius
+        float circleBlink = clamp(circleData.w, 0.0, 1.0);
+
+        vec4 extra = uCircleExtras[ci];
+        float rotationDeg = extra.x;
+        float spokesF = max(0.0, extra.y);
+        float alphaScale = extra.w;
+
+        // Distance in (perimeterU, worldY) space
+        float du = fragPosPerim.x - circleU;
+        float dy = fragPosPerim.y - circleY;
+        float distToCenter = length(vec2(du, dy));
+        float fw = fwidth(distToCenter) + 1e-6;
+
+        // ------------------------------------------------------------
+        // Desired draw order:
+        // 1) spokes (like original)
+        // 2) hollow ring on top (slightly smaller than spoke length) that masks everything below
+        // 3) on blink: ring becomes fully filled, spokes thicken -> gear look
+        // ------------------------------------------------------------
+
+        // Shrink/expand with blink a bit (keeps the RW vibe)
+        float blinkScale = mix(1.0, 0.82, circleBlink);
+        float spokeLen = circleRad * blinkScale;
+
+        // Ring sits slightly inside the spoke length so spoke tips stick out
+        float ringInset = max(0.65, spokeLen * 0.12);
+        float ringRad = max(0.0, spokeLen - ringInset);
+
+        // Thickness grows on blink (helps the gear feel when filled)
+        float ringThickness = mix(0.22, 0.55, smoothstep(0.15, 1.0, circleBlink));
+
+        // Fill factor: when blinking, the circle becomes completely filled
+        float fillFactor = smoothstep(0.28, 0.70, circleBlink);
+
+        // --------------------
+        // Spokes (radiating lines)
+        // --------------------
+        float spokesA = 0.0;
+        if (spokesF > 0.5 && distToCenter > 0.25 && distToCenter < spokeLen + ringThickness) {
+            float angle = atan(dy, du) * 180.0 / 3.14159265;
+            angle += rotationDeg;
+
+            float spokeAngle = 360.0 / spokesF;
+            float angleMod = mod(angle, spokeAngle);
+            float spokeDistAngle = min(angleMod, spokeAngle - angleMod);
+
+            // Convert angular distance to linear distance at this radius
+            float spokeDistLinear = spokeDistAngle * distToCenter * 3.14159265 / 180.0;
+
+            // Spokes thicken on blink to create gear appearance
+            float spokeWidth = mix(0.06, 0.22, fillFactor);
+            spokesA = 1.0 - smoothstep(spokeWidth, spokeWidth + fw, spokeDistLinear);
+
+            // Mask spokes so the ring "draws on top" and blocks them (only tips outside ring remain)
+            float ringOuter = ringRad + ringThickness * 0.5;
+            float spokesOutside = smoothstep(ringOuter - fw, ringOuter + fw, distToCenter);
+            spokesA *= spokesOutside;
+
+            // Hard stop at spoke length
+            float spokeEnd = 1.0 - smoothstep(spokeLen - fw, spokeLen + fw, distToCenter);
+            spokesA *= spokeEnd;
+        }
+
+        // --------------------
+        // Hollow ring (on top of spokes)
+        // --------------------
+        float ringDist = abs(distToCenter - ringRad);
+        float ringA = 1.0 - smoothstep(ringThickness * 0.5, ringThickness * 0.5 + fw, ringDist);
+
+        // --------------------
+        // Filled disc on blink (replaces hollow look)
+        // --------------------
+        float ringOuter = ringRad + ringThickness * 0.5;
+        float insideOuter = 1.0 - smoothstep(ringOuter - fw, ringOuter + fw, distToCenter);
+        float fillA = insideOuter * fillFactor;
+
+        // Circle visible alpha (spokes + ring + optional fill)
+        float circleA = max(max(spokesA, ringA), fillA) * alphaScale * baseOpacity;
+
+        // Accumulate
+        circlesA = max(circlesA, circleA);
+
+        // ------------------------------------------------------------
+        // Masks:
+        // - circlesOccludeMask: removes underlying shader patterns under the ring/fill so it truly draws on top
+        // - circlesHoleMask: punches out EVERYTHING (incl circles) for the hollow interior (disabled when filled)
+        // ------------------------------------------------------------
+
+        // Ring/fill occlusion mask (do NOT include the hollow interior unless we're filled)
+        float occlude = max(ringA, fillA);
+        circlesOccludeMask = max(circlesOccludeMask, occlude);
+
+        // Hollow interior: slightly inside the ring inner edge
+        float holeR = max(0.0, ringRad - ringThickness * 0.55);
+        float holeInside = 1.0 - smoothstep(holeR - fw, holeR + fw, distToCenter);
+        float holeMask = holeInside * (1.0 - fillFactor);
+        circlesHoleMask = max(circlesHoleMask, holeMask);
+    }
+
+    // ------------------------------------------------------------
+    // Connection lines between circles (shader-side, deterministic)
+    // ------------------------------------------------------------
+    if (uCircleCount > 1) {
+        for (int i = 0; i < MAX_CIRCLES; i++) {
+            if (i >= uCircleCount) break;
+
+            vec2 a = vec2(uCircles[i].x, uCircles[i].y);
+
+            // Two outgoing links per circle
+            for (int lk = 0; lk < 2; lk++) {
+                float fi = float(i);
+                float flk = float(lk);
+
+                // Pick a target index (stable over time)
+                int j = int(floor(hash11(fi * 71.7 + flk * 13.9) * float(uCircleCount)));
+                if (j == i) j = (j + 1) % uCircleCount;
+
+                // Randomly disable some links so it doesn't become a hairball
+                float enabled = step(hash11(fi * 19.3 + flk * 9.7), 0.55);
+                if (enabled <= 0.0) continue;
+
+                // Unwrap b along perimeter so the segment is the shortest path
+                float duAB = shortestDelta(a.x, uCircles[j].x, perim);
+                vec2 b = vec2(a.x + duAB, uCircles[j].y);
+
+                // Unwrap fragment U into the same space
+                float uFrag = a.x + shortestDelta(a.x, fragPosPerim.x, perim);
+                vec2 p = vec2(uFrag, fragPosPerim.y);
+
+                // Distance to segment + endpoint fade so it doesn't draw "into" the circles
+                vec2 ba = b - a;
+                float h = clamp(dot(p - a, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+                float d = length((p - a) - ba * h);
+
+                float fwL = max(fwidth(d), 0.02);
+
+                float blinkLine = max(uCircles[i].w, uCircles[j].w);
+                float w = mix(0.06, 0.14, pow(blinkLine, 1.5));
+
+                float lineCore = 1.0 - smoothstep(w, w + fwL, d);
+                float endFade = smoothstep(0.03, 0.14, h) * smoothstep(0.03, 0.14, 1.0 - h);
+                lineCore *= endFade;
+
+                // Soft blinking along the line (Rain World-style "connectionsBlink")
+                float stepT = floor(tTick * 0.12);
+                float gate = step(hash11(stepT + fi * 31.1 + float(j) * 17.7 + flk * 3.3), 0.35);
+                float flick = mix(0.45, 1.0, gate);
+
+                float lineA = lineCore * flick * baseOpacity * zoneFade;
+                circleLinesA = max(circleLinesA, lineA);
+            }
+        }
+    }
+
+    // ============================================================
     // Compose
     // ============================================================
     vec3 baseCyan = vec3(0.55, 1.00, 0.90);
@@ -370,6 +564,17 @@ void main() {
     outRGB += baseCyan * boxFillA;        outA = max(outA, boxFillA);
     outRGB += baseCyan * boxOutlineA;     outA = max(outA, boxOutlineA);
 
+    // Connection lines between circles
+    outRGB += baseCyan * circleLinesA;    outA = max(outA, circleLinesA);
+
+    // Circles occlude anything drawn underneath (spokes/glyphs/lines) under the ring/fill
+    outRGB *= (1.0 - circlesOccludeMask);
+    outA   *= (1.0 - circlesOccludeMask);
+
+    
+    // Add projected circles (additive blend with cyan color)
+    outRGB += baseCyan * circlesA;        outA = max(outA, circlesA);
+
     if (outA <= 0.001) discard;
 
     outRGB = outRGB / max(outA, 1e-6);
@@ -377,6 +582,11 @@ void main() {
     // Punch glyph holes inside cursor fill (now includes "non-visible" glyphs)
     float holeA = hole * holeStrength;
     outRGB *= (1.0 - holeA);
+
+    // Punch circle inner holes: remove ALL shader pattern behind them (transparent)
+    outRGB *= (1.0 - circlesHoleMask);
+    outA   *= (1.0 - circlesHoleMask);
+    if (outA <= 0.001) discard;
 
     float glow = smoothstep(0.25, 0.95, outA);
     outRGB = mix(outRGB, vec3(1.0), 0.10 * glow);

@@ -1,6 +1,7 @@
 package dev.fouriis.karmagate.client.swarmer;
 
 import dev.fouriis.karmagate.KarmaGateMod;
+import dev.fouriis.karmagate.client.gridproject.ProjectedCirclePatternManager;
 import dev.fouriis.karmagate.client.gridproject.ProjectionZone;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
@@ -10,9 +11,11 @@ import net.minecraft.util.math.random.Random;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Manages all neuron swarmers across all projection zones.
@@ -45,6 +48,7 @@ public class NeuronSwarmerManager {
         if (client.world == null || client.player == null) {
             // No world, clear all swarmers
             swarmersByZone.clear();
+            ProjectedCirclePatternManager.getInstance().clear();
             return;
         }
         
@@ -55,7 +59,10 @@ public class NeuronSwarmerManager {
         List<ProjectionZone> zones = ProjectionZone.getZones();
         
         // Track which zones are still valid
-        List<String> validZoneNames = new ArrayList<>();
+        Set<String> validZoneNames = new HashSet<>();
+        
+        // Get tick delta for circle interpolation
+        float tickDelta = client.getRenderTickCounter().getTickDelta(true);
         
         for (ProjectionZone zone : zones) {
             validZoneNames.add(zone.getName());
@@ -92,6 +99,14 @@ public class NeuronSwarmerManager {
             }
             // Note: We don't remove swarmers when player leaves range - they persist
             // They will only be removed when the zone itself is removed
+            
+            // Tick projected circles for this zone (even if player is out of range, circles should animate)
+            // Use camera position for projection onto walls behind neurons
+            net.minecraft.client.render.Camera camera = client.gameRenderer.getCamera();
+            double camX = camera.getPos().x;
+            double camY = camera.getPos().y;
+            double camZ = camera.getPos().z;
+            ProjectedCirclePatternManager.getInstance().tickZone(zone, swarmers, camX, camY, camZ, tickDelta);
         }
         
         // Remove swarmers for zones that no longer exist
@@ -102,6 +117,9 @@ public class NeuronSwarmerManager {
                 zoneIterator.remove();
             }
         }
+        
+        // Cleanup orphaned circle zones
+        ProjectedCirclePatternManager.getInstance().cleanupOrphanedZones(validZoneNames);
     }
     
     /**
