@@ -28,7 +28,7 @@ public class NeuronSwarmerRenderer {
     private static final float GLOW_INTENSITY = 1.0f;
     
     // Glow radius multiplier for the outer glow layer
-    private static final float GLOW_SCALE = 2.5f;
+    private static final float GLOW_SCALE = 1.2f;
     
     private static boolean initialized = false;
     
@@ -136,58 +136,67 @@ public class NeuronSwarmerRenderer {
         int b = (int)(rgb[2] * 255);
         int a = (int)(GLOW_INTENSITY * 255);
         
-        // Camera basis (for billboarding)
-        float camYawRad = (float) Math.toRadians(-cameraYaw);
-        float camPitchRad = (float) Math.toRadians(cameraPitch);
-        float baseRightX = (float) Math.cos(camYawRad);
-        float baseRightZ = (float) Math.sin(camYawRad);
-        float baseUpX = (float) (-Math.sin(camYawRad) * Math.sin(camPitchRad));
-        float baseUpY = (float) Math.cos(camPitchRad);
-        float baseUpZ = (float) (Math.cos(camYawRad) * Math.sin(camPitchRad));
+        // --- ORIENT TO DIRECTION OF TRAVEL (NO BILLBOARDING) ---
 
-        // Determine movement yaw; fall back to camera yaw if direction is tiny
-        Vec3d moveDir = swarmer.direction;
-        double mvLen = moveDir.length();
-        float moveYaw;
-        if (mvLen > 1e-4) {
-            moveYaw = (float) Math.atan2(moveDir.z, moveDir.x);
-        } else {
-            moveYaw = (float) Math.toRadians(-cameraYaw);
+        // Use swarmer.direction as forward; if tiny, fall back to camera yaw forward in XZ.
+        Vec3d forward = swarmer.direction;
+        if (forward.lengthSquared() < 1e-8) {
+            double yawRad = Math.toRadians(-cameraYaw);
+            forward = new Vec3d(Math.cos(yawRad), 0.0, Math.sin(yawRad));
+        }
+        forward = forward.normalize();
+
+        // Choose a reference up that's not parallel to forward
+        Vec3d refUp = new Vec3d(0.0, 1.0, 0.0);
+        if (Math.abs(forward.dotProduct(refUp)) > 0.95) {
+            refUp = new Vec3d(1.0, 0.0, 0.0);
         }
 
-            float[] yawOffsets = new float[] { moveYaw, moveYaw + (float)(Math.PI / 2.0) };
+        // A base perpendicular vector we can rotate around forward to make the "X"
+        Vec3d side = forward.crossProduct(refUp).normalize();
 
         float size = SPRITE_SIZE * (1.0f + 0.1f * (float) Math.sin(rotation * Math.PI * 2));
 
-        for (float yawOff : yawOffsets) {
-            // Rotate base camera right/up by yawOff around Y to face movement direction
-            float cosA = (float) Math.cos(yawOff);
-            float sinA = (float) Math.sin(yawOff);
+        // Two crossed planes: rotate the perpendicular vector 0° and 90° around forward.
+        double[] angles = new double[] { 0.0, Math.PI / 2.0 };
 
-            float rx = (baseRightX * cosA - baseRightZ * sinA) * size;
-            float rz = (baseRightX * sinA + baseRightZ * cosA) * size;
+        for (double ang : angles) {
+            Vec3d sideRot = rotateAroundAxis(side, forward, ang).normalize();
 
-            float ux = (baseUpX * cosA - baseUpZ * sinA) * size;
-            float uz = (baseUpX * sinA + baseUpZ * cosA) * size;
-            float uy = baseUpY * size;
+            // Quad axes (both scaled by size):
+            // vAxis is along travel, uAxis is perpendicular to travel (rotated for the X)
+            Vec3d uAxis = sideRot.multiply(size);
+            Vec3d vAxis = forward.multiply(size);
+
+            float ux = (float) uAxis.x;
+            float uy = (float) uAxis.y;
+            float uz = (float) uAxis.z;
+
+            float vx = (float) vAxis.x;
+            float vy = (float) vAxis.y;
+            float vz = (float) vAxis.z;
 
             // Bottom-left
-            buffer.vertex(matrix, (float)(x - rx - ux), (float)(y - uy), (float)(z - rz - uz))
+            buffer.vertex(matrix,
+                    (float)(x - ux - vx), (float)(y - uy - vy), (float)(z - uz - vz))
                 .texture(0, 1)
                 .color(r, g, b, a);
 
             // Bottom-right
-            buffer.vertex(matrix, (float)(x + rx - ux), (float)(y - uy), (float)(z + rz - uz))
+            buffer.vertex(matrix,
+                    (float)(x + ux - vx), (float)(y + uy - vy), (float)(z + uz - vz))
                 .texture(1, 1)
                 .color(r, g, b, a);
 
             // Top-right
-            buffer.vertex(matrix, (float)(x + rx + ux), (float)(y + uy), (float)(z + rz + uz))
+            buffer.vertex(matrix,
+                    (float)(x + ux + vx), (float)(y + uy + vy), (float)(z + uz + vz))
                 .texture(1, 0)
                 .color(r, g, b, a);
 
             // Top-left
-            buffer.vertex(matrix, (float)(x - rx + ux), (float)(y + uy), (float)(z - rz + uz))
+            buffer.vertex(matrix,
+                    (float)(x - ux + vx), (float)(y - uy + vy), (float)(z - uz + vz))
                 .texture(0, 0)
                 .color(r, g, b, a);
         }
@@ -252,6 +261,18 @@ public class NeuronSwarmerRenderer {
     private static float lerp(float a, float b, float t) {
         return a + (b - a) * t;
     }
+
+    private static Vec3d rotateAroundAxis(Vec3d v, Vec3d axisUnit, double angleRad) {
+        // Rodrigues' rotation formula; axisUnit must be normalized
+        double cos = Math.cos(angleRad);
+        double sin = Math.sin(angleRad);
+
+        Vec3d term1 = v.multiply(cos);
+        Vec3d term2 = axisUnit.crossProduct(v).multiply(sin);
+        Vec3d term3 = axisUnit.multiply(axisUnit.dotProduct(v) * (1.0 - cos));
+
+        return term1.add(term2).add(term3);
+    }
     
     /**
      * Renders the outer glow layer of a swarmer.
@@ -280,44 +301,59 @@ public class NeuronSwarmerRenderer {
         int b = (int)(rgb[2] * 255);
         int a = (int)(0.3f * 255); // Lower alpha for glow
         
-        // Billboard rotation vectors
-        float yawRad = (float) Math.toRadians(-cameraYaw);
-        float pitchRad = (float) Math.toRadians(cameraPitch);
-        
-        float rightX = (float) Math.cos(yawRad);
-        float rightZ = (float) Math.sin(yawRad);
-        
-        float upX = (float) (-Math.sin(yawRad) * Math.sin(pitchRad));
-        float upY = (float) Math.cos(pitchRad);
-        float upZ = (float) (Math.cos(yawRad) * Math.sin(pitchRad));
-        
+        // --- ORIENT TO DIRECTION OF TRAVEL (NO BILLBOARDING) ---
+        Vec3d forward = swarmer.direction;
+        if (forward.lengthSquared() < 1e-8) {
+            double yawRad = Math.toRadians(-cameraYaw);
+            forward = new Vec3d(Math.cos(yawRad), 0.0, Math.sin(yawRad));
+        }
+        forward = forward.normalize();
+
+        Vec3d refUp = new Vec3d(0.0, 1.0, 0.0);
+        if (Math.abs(forward.dotProduct(refUp)) > 0.95) {
+            refUp = new Vec3d(1.0, 0.0, 0.0);
+        }
+
+        Vec3d side = forward.crossProduct(refUp).normalize();
+
         // Larger size for glow
         float size = SPRITE_SIZE * GLOW_SCALE;
-        
+
         // Pulsing effect
         float pulse = 1.0f + 0.2f * (float) Math.sin(rotation * Math.PI * 2);
         size *= pulse;
-        
-        float rx = rightX * size;
-        float rz = rightZ * size;
-        float ux = upX * size;
-        float uy = upY * size;
-        float uz = upZ * size;
-        
-        buffer.vertex(matrix, (float)(x - rx - ux), (float)(y - uy), (float)(z - rz - uz))
-            .texture(0, 1)
-            .color(r, g, b, a);
-        
-        buffer.vertex(matrix, (float)(x + rx - ux), (float)(y - uy), (float)(z + rz - uz))
-            .texture(1, 1)
-            .color(r, g, b, a);
-        
-        buffer.vertex(matrix, (float)(x + rx + ux), (float)(y + uy), (float)(z + rz + uz))
-            .texture(1, 0)
-            .color(r, g, b, a);
-        
-        buffer.vertex(matrix, (float)(x - rx + ux), (float)(y + uy), (float)(z - rz + uz))
-            .texture(0, 0)
-            .color(r, g, b, a);
+
+        double[] angles = new double[] { 0.0, Math.PI / 2.0 };
+
+        for (double ang : angles) {
+            Vec3d sideRot = rotateAroundAxis(side, forward, ang).normalize();
+
+            Vec3d uAxis = sideRot.multiply(size);
+            Vec3d vAxis = forward.multiply(size);
+
+            float ux = (float) uAxis.x;
+            float uy = (float) uAxis.y;
+            float uz = (float) uAxis.z;
+
+            float vx = (float) vAxis.x;
+            float vy = (float) vAxis.y;
+            float vz = (float) vAxis.z;
+
+            buffer.vertex(matrix, (float)(x - ux - vx), (float)(y - uy - vy), (float)(z - uz - vz))
+                .texture(0, 1)
+                .color(r, g, b, a);
+
+            buffer.vertex(matrix, (float)(x + ux - vx), (float)(y + uy - vy), (float)(z + uz - vz))
+                .texture(1, 1)
+                .color(r, g, b, a);
+
+            buffer.vertex(matrix, (float)(x + ux + vx), (float)(y + uy + vy), (float)(z + uz + vz))
+                .texture(1, 0)
+                .color(r, g, b, a);
+
+            buffer.vertex(matrix, (float)(x - ux + vx), (float)(y - uy + vy), (float)(z - uz + vz))
+                .texture(0, 0)
+                .color(r, g, b, a);
+        }
     }
 }
